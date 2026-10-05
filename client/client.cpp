@@ -4,23 +4,23 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#pragma comment(lib, "Ws2_32.lib")
+    #pragma comment(lib, "Ws2_32.lib")
 #else
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netdb.h>
-#include <unistd.h>
+    #include <sys/types.h>
+    #include <sys/socket.h>
+    #include <arpa/inet.h>
+    #include <netdb.h>
+    #include <unistd.h>
 #endif
 
 using namespace std;
 
 #ifdef _WIN32
-using SocketType = SOCKET;
-const SocketType INVALID_SOCKET_VALUE = INVALID_SOCKET;
+    using SocketType = SOCKET;
+    const SocketType INVALID_SOCKET_VALUE = INVALID_SOCKET;
 #else
-using SocketType = int;
-const SocketType INVALID_SOCKET_VALUE = -1;
+    using SocketType = int;
+    const SocketType INVALID_SOCKET_VALUE = -1;
 #endif
 
 void closeSocket(SocketType socketDescriptor) {
