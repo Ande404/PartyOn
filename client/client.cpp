@@ -1,10 +1,39 @@
 #include <iostream>
 #include <string>
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "Ws2_32.lib")
+#else
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
+#endif
+
 using namespace std;
+
+void closeSocket(int socketDescriptor) {
+#ifdef _WIN32
+    closesocket(socketDescriptor);
+#else
+    close(socketDescriptor);
+#endif
+}
 
 int main() {
     string command;
+
+    #ifdef _WIN32
+        WSADATA wsaData;
+
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+            cerr << "Failed to initialize Winsock." << endl;
+            return 1;
+        }
+    #endif
 
     cout << "================================" << endl;
     cout << "           PartyOn" << endl;
@@ -50,5 +79,8 @@ int main() {
         cout << "You entered: " << command << endl;
     }
 
+    #ifdef _WIN32
+        WSACleanup();
+    #endif
     return 0;
 }
