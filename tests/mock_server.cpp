@@ -182,6 +182,30 @@ int main() {
                 );
             }
 
+            else if (message == "CLAIM_ITEM Party1 Chips") {
+                string response = "200 OK\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+
+                // Simulate an asynchronous server notification
+                this_thread::sleep_for(chrono::milliseconds(1000));
+
+                string notification =
+                    "210 Party1 ITEM_CLAIMED Chips claimed by User1\n";
+
+                send(
+                    clientSocket,
+                    notification.c_str(),
+                    static_cast<int>(notification.size()),
+                    0
+                );
+            }
+            
             // Generic response for the other test commands
             else {
                 string response = "200 OK\n";

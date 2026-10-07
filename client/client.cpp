@@ -2,6 +2,7 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <mutex>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -16,6 +17,7 @@
 #endif
 
 using namespace std;
+mutex outputMutex;
 
 #ifdef _WIN32
     using SocketType = SOCKET;
@@ -121,6 +123,19 @@ bool sendMessage(SocketType socketDescriptor, const string& message) {
     return true;
 }
 
+void displayServerLine(const string& line) {
+    lock_guard<mutex> lock(outputMutex);
+
+    if (line.rfind("210 ", 0) == 0) {
+        cout << endl;
+        cout << "[Notification] " << line << endl;
+    }
+    else {
+        cout << endl;
+        cout << line << endl;
+    }
+}
+
 // Receives complete protocol lines from the server
 void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
     char buffer[1024];
@@ -136,6 +151,8 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
 
         if (bytesReceived <= 0) {
             if (running) {
+                lock_guard<mutex> lock(outputMutex);
+
                 cout << endl;
                 cout << "Connection closed by server." << endl;
             }
@@ -161,8 +178,7 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
                 line.pop_back();
             }
 
-            cout << endl;
-            cout << line << endl;
+            displayServerLine(line);
         }
     }
 }
