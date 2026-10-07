@@ -2,6 +2,7 @@
 #include <string>
 #include <thread>
 #include <chrono>
+#include <sstream>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -143,9 +144,21 @@ int main() {
                 break;
             }
 
+            // Empty command test
+            if (message.empty()) {
+                string response = "300 Invalid Command\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+            }
+
             // Temporary response used to test the PartyOn client
             // Test a multi-line WHO response
-            if (message == "WHO Party1") {
+            else if (message == "WHO Party1") {
                 string response =
                     "200 OK\n"
                     "User1 (organizer) - Yes\n"
@@ -302,9 +315,33 @@ int main() {
                 );
             }
 
-            // Generic response
+            
+            // Generic response for other valid PartyOn commands
             else {
-                string response = "200 OK\n";
+                istringstream input(message);
+                string command;
+
+                input >> command;
+
+                bool validCommand =
+                    command == "JOIN" ||
+                    command == "CREATE_EVENT" ||
+                    command == "DELETE_EVENT" ||
+                    command == "RSVP" ||
+                    command == "ITEMLIST" ||
+                    command == "CLAIM_ITEM" ||
+                    command == "RELEASE_ITEM" ||
+                    command == "UPDATE_EVENT" ||
+                    command == "WHO";
+
+                string response;
+
+                if (validCommand) {
+                    response = "200 OK\n";
+                }
+                else {
+                    response = "300 Invalid Command\n";
+                }
 
                 send(
                     clientSocket,
