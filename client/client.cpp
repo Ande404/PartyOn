@@ -85,6 +85,48 @@ SocketType connectToServer(const string& host, const string& port) {
     return clientSocket;
 }
 
+// Sends a complete protocol message terminated by '\n'
+bool sendMessage(SocketType socketDescriptor, const string& message) {
+    string data = message + "\n";
+
+    int totalSent = 0;
+    int messageLength = static_cast<int>(data.size());
+
+    while (totalSent < messageLength) {
+        int bytesSent = send(
+            socketDescriptor,
+            data.c_str() + totalSent,
+            messageLength - totalSent,
+            0
+        );
+
+        if (bytesSent <= 0) {
+            cerr << "Failed to send message to server." << endl;
+            return false;
+        }
+
+        totalSent += bytesSent;
+    }
+
+    return true;
+}
+
+void displayHelp() {
+    cout << endl;
+    cout << "Available commands:" << endl;
+    cout << "JOIN" << endl;
+    cout << "CREATE_EVENT" << endl;
+    cout << "DELETE_EVENT" << endl;
+    cout << "RSVP" << endl;
+    cout << "ITEMLIST" << endl;
+    cout << "CLAIM_ITEM" << endl;
+    cout << "RELEASE_ITEM" << endl;
+    cout << "UPDATE_EVENT" << endl;
+    cout << "WHO" << endl;
+    cout << "QUIT" << endl;
+    cout << "HELP" << endl;
+    cout << endl;
+}
 
 int main() {
     string command;
@@ -100,15 +142,6 @@ int main() {
             return 1;
         }
     #endif
-
-    cout << "================================" << endl;
-    cout << "           PartyOn" << endl;
-    cout << "================================" << endl;
-    cout << "Welcome to PartyOn!" << endl;
-    cout << "Type HELP to see available commands." << endl;
-    cout << "Type QUIT to exit." << endl;
-    cout << endl;
-
 
     cout << "Server Host/IP: ";
     getline(cin, host);
@@ -134,41 +167,44 @@ int main() {
     cout << "Connected to PartyOn server." << endl;
     cout << endl;
 
+    cout << "================================" << endl;
+    cout << "           PartyOn" << endl;
+    cout << "================================" << endl;
+    cout << "Welcome to PartyOn!" << endl;
+
+    displayHelp();
+
 
     while (true) {
         cout << "PartyOn> ";
 
-        getline(cin, command);
+        if (!getline(cin, command)) {
+            cout << endl;
+            cout << "Input closed. Exiting PartyOn." << endl;
+            break;
+        }
+
+        // Protocol limit includes the terminating '\n'
+        if (command.size() + 1 > 527) {
+            cout << "Message exceeds the 527-byte protocol limit." << endl;
+            continue;
+        }
+
+        if (command == "HELP") {
+            displayHelp();
+            continue;
+        }
 
         if (command == "QUIT") {
+            sendMessage(clientSocket, command);
             cout << "Goodbye!" << endl;
             break;
         }
 
-        if (command == "HELP") {
-            cout << endl;
-            cout << "Available commands:" << endl;
-            cout << "JOIN" << endl;
-            cout << "CREATE_EVENT" << endl;
-            cout << "DELETE_EVENT" << endl;
-            cout << "RSVP" << endl;
-            cout << "ITEMLIST" << endl;
-            cout << "CLAIM_ITEM" << endl;
-            cout << "RELEASE_ITEM" << endl;
-            cout << "UPDATE_EVENT" << endl;
-            cout << "WHO" << endl;
-            cout << "QUIT" << endl;
-            cout << endl;
-
-            continue;
+        if (!sendMessage(clientSocket, command)) {
+            cout << "Connection to server was lost." << endl;
+            break;
         }
-
-        if (command.empty()) {
-            cout << "Please enter a command." << endl;
-            continue;
-        }
-
-        cout << "You entered: " << command << endl;
     }
 
     closeSocket(clientSocket);
