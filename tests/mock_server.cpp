@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <thread>
+#include <chrono>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -31,23 +33,23 @@ void closeSocket(SocketType socketDescriptor) {
 }
 
 int main() {
-#ifdef _WIN32
+    #ifdef _WIN32
     WSADATA wsaData;
 
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
         cerr << "Failed to initialize Winsock." << endl;
         return 1;
     }
-#endif
+    #endif
 
     SocketType serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
     if (serverSocket == INVALID_SOCKET_VALUE) {
         cerr << "Could not create server socket." << endl;
 
-#ifdef _WIN32
+    #ifdef _WIN32
         WSACleanup();
-#endif
+    #endif
         return 1;
     }
 
@@ -65,9 +67,9 @@ int main() {
         cerr << "Could not bind to port 5000." << endl;
         closeSocket(serverSocket);
 
-#ifdef _WIN32
+    #ifdef _WIN32
         WSACleanup();
-#endif
+    #endif
         return 1;
     }
 
@@ -75,9 +77,9 @@ int main() {
         cerr << "Could not listen on port 5000." << endl;
         closeSocket(serverSocket);
 
-#ifdef _WIN32
+    #ifdef _WIN32
         WSACleanup();
-#endif
+    #endif
         return 1;
     }
 
@@ -90,27 +92,108 @@ int main() {
         cerr << "Could not accept client connection." << endl;
         closeSocket(serverSocket);
 
-#ifdef _WIN32
-        WSACleanup();
-#endif
-        return 1;
+    #ifdef _WIN32
+            WSACleanup();
+    #endif
+            return 1;
     }
 
     cout << "Client connected!" << endl;
 
     char buffer[1024];
+    string receiveBuffer;
+    bool clientRequestedQuit = false;
 
-    while (true) {
-        int bytesReceived = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+    while (!clientRequestedQuit) {
+        int bytesReceived = recv(
+            clientSocket,
+            buffer,
+            sizeof(buffer),
+            0
+        );
 
         if (bytesReceived <= 0) {
             cout << "Client disconnected." << endl;
             break;
         }
 
-        buffer[bytesReceived] = '\0';
+        // Save all bytes received from TCP
+        receiveBuffer.append(buffer, bytesReceived);
 
-        cout << "Received: " << buffer << endl;
+        size_t newlinePosition;
+
+        // Process every complete command ending in '\n'
+        while ((newlinePosition = receiveBuffer.find('\n')) != string::npos) {
+            string message = receiveBuffer.substr(0, newlinePosition);
+
+            // Remove the processed command from the buffer
+            receiveBuffer.erase(0, newlinePosition + 1);
+
+            // Accept CRLF if received
+            if (!message.empty() && message.back() == '\r') {
+                message.pop_back();
+            }
+
+            cout << "Received: " << message << endl;
+
+            // QUIT closes the connection without a response
+            if (message == "QUIT") {
+                cout << "Client requested disconnect." << endl;
+                clientRequestedQuit = true;
+                break;
+            }
+
+            // Temporary response used to test the PartyOn client
+            // Test a multi-line WHO response
+            if (message == "WHO Party1") {
+                string response =
+                    "200 OK\n"
+                    "User1 (organizer) - Yes\n"
+                    "User2 - Maybe\n"
+                    "END\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+            }
+
+            // Test a fragmented TCP response
+            else if (message == "RSVP Party1 Yes") {
+                string firstPart = "200 O";
+                string secondPart = "K\n";
+
+                send(
+                    clientSocket,
+                    firstPart.c_str(),
+                    static_cast<int>(firstPart.size()),
+                    0
+                );
+
+                this_thread::sleep_for(chrono::milliseconds(200));
+
+                send(
+                    clientSocket,
+                    secondPart.c_str(),
+                    static_cast<int>(secondPart.size()),
+                    0
+                );
+            }
+
+            // Generic response for the other test commands
+            else {
+                string response = "200 OK\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+            }
+        }
     }
 
     closeSocket(clientSocket);

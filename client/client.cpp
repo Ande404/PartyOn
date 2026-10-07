@@ -1,5 +1,7 @@
 #include <iostream>
 #include <string>
+#include <thread>
+#include <atomic>
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -28,6 +30,14 @@ void closeSocket(SocketType socketDescriptor) {
     closesocket(socketDescriptor);
 #else
     close(socketDescriptor);
+#endif
+}
+
+void shutdownSocket(SocketType socketDescriptor) {
+#ifdef _WIN32
+    shutdown(socketDescriptor, SD_BOTH);
+#else
+    shutdown(socketDescriptor, SHUT_RDWR);
 #endif
 }
 
@@ -111,6 +121,52 @@ bool sendMessage(SocketType socketDescriptor, const string& message) {
     return true;
 }
 
+// Receives complete protocol lines from the server
+void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
+    char buffer[1024];
+    string receiveBuffer;
+
+    while (running) {
+        int bytesReceived = recv(
+            socketDescriptor,
+            buffer,
+            sizeof(buffer),
+            0
+        );
+
+        if (bytesReceived <= 0) {
+            if (running) {
+                cout << endl;
+                cout << "Connection closed by server." << endl;
+            }
+
+            running = false;
+            break;
+        }
+
+        // Add newly received bytes to the saved buffer
+        receiveBuffer.append(buffer, bytesReceived);
+
+        size_t newlinePosition;
+
+        // Process every complete line currently available
+        while ((newlinePosition = receiveBuffer.find('\n')) != string::npos) {
+
+            string line = receiveBuffer.substr(0, newlinePosition);
+
+            receiveBuffer.erase(0, newlinePosition + 1);
+
+            // Accept CRLF but remove the optional '\r'
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+
+            cout << endl;
+            cout << line << endl;
+        }
+    }
+}
+
 void displayHelp() {
     cout << endl;
     cout << "Available commands:" << endl;
@@ -174,13 +230,24 @@ int main() {
 
     displayHelp();
 
+    atomic<bool> running(true);
 
-    while (true) {
+    thread receiverThread(
+        receiveLoop,
+        clientSocket,
+        ref(running)
+    );
+
+    while (running) {
         cout << "PartyOn> ";
 
         if (!getline(cin, command)) {
             cout << endl;
             cout << "Input closed. Exiting PartyOn." << endl;
+            break;
+        }
+
+        if (!running) {
             break;
         }
 
@@ -197,14 +264,31 @@ int main() {
 
         if (command == "QUIT") {
             sendMessage(clientSocket, command);
+
             cout << "Goodbye!" << endl;
+
+            running = false;
+            shutdownSocket(clientSocket);
+
             break;
         }
 
         if (!sendMessage(clientSocket, command)) {
             cout << "Connection to server was lost." << endl;
+
+            running = false;
+            shutdownSocket(clientSocket);
+
             break;
         }
+    }
+
+    running = false;
+
+    shutdownSocket(clientSocket);
+
+    if (receiverThread.joinable()) {
+        receiverThread.join();
     }
 
     closeSocket(clientSocket);
