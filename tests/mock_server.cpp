@@ -160,7 +160,7 @@ int main() {
                 );
             }
 
-            // Test a fragmented TCP response
+            // Fragmented TCP response test
             else if (message == "RSVP Party1 Yes") {
                 string firstPart = "200 O";
                 string secondPart = "K\n";
@@ -182,6 +182,7 @@ int main() {
                 );
             }
 
+            // ITEM_CLAIMED notification
             else if (message == "CLAIM_ITEM Party1 Chips") {
                 string response = "200 OK\n";
 
@@ -192,8 +193,7 @@ int main() {
                     0
                 );
 
-                // Simulate an asynchronous server notification
-                this_thread::sleep_for(chrono::milliseconds(1000));
+                this_thread::sleep_for(chrono::milliseconds(500));
 
                 string notification =
                     "210 Party1 ITEM_CLAIMED Chips claimed by User1\n";
@@ -205,8 +205,104 @@ int main() {
                     0
                 );
             }
-            
-            // Generic response for the other test commands
+
+            // ITEM_RELEASED notification
+            else if (message == "RELEASE_ITEM Party1 Chips") {
+                string response = "200 OK\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+
+                this_thread::sleep_for(chrono::milliseconds(500));
+
+                string notification =
+                    "210 Party1 ITEM_RELEASED Chips is available to bring again\n";
+
+                send(
+                    clientSocket,
+                    notification.c_str(),
+                    static_cast<int>(notification.size()),
+                    0
+                );
+            }
+
+            // EVENT_UPDATED notification
+            else if (message == "UPDATE_EVENT Party1 10/15/2026 06:00PM") {
+                string response = "200 OK\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+
+                this_thread::sleep_for(chrono::milliseconds(500));
+
+                string notification =
+                    "210 Party1 EVENT_UPDATED new event details: 10/15/2026 06:00PM\n";
+
+                send(
+                    clientSocket,
+                    notification.c_str(),
+                    static_cast<int>(notification.size()),
+                    0
+                );
+            }
+
+            // RSVP_UPDATED notification
+            else if (message == "RSVP Party1 No") {
+                string response = "200 OK\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+
+                this_thread::sleep_for(chrono::milliseconds(500));
+
+                string notification =
+                    "210 Party1 RSVP_UPDATED User1 status is now No\n";
+
+                send(
+                    clientSocket,
+                    notification.c_str(),
+                    static_cast<int>(notification.size()),
+                    0
+                );
+            }
+
+            // EVENT_DELETED notification
+            else if (message == "DELETE_EVENT Party1") {
+                string response = "202 Deleted Event\n";
+
+                send(
+                    clientSocket,
+                    response.c_str(),
+                    static_cast<int>(response.size()),
+                    0
+                );
+
+                this_thread::sleep_for(chrono::milliseconds(500));
+
+                string notification =
+                    "210 Party1 EVENT_DELETED This event has been deleted\n";
+
+                send(
+                    clientSocket,
+                    notification.c_str(),
+                    static_cast<int>(notification.size()),
+                    0
+                );
+            }
+
+            // Generic response
             else {
                 string response = "200 OK\n";
 
