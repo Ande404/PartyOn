@@ -49,8 +49,8 @@ PartyOn-Phase2/
 └── docs/
     ├── UpdatedProtocolSpecification.md   # authoritative protocol (PartyOn v1.0)
     ├── PartyOn_Client_Server_Architecture_Diagram (1).png
-    ├── Sequence-Diagram (1).png
-    ├── Project - Phase 1 (3).pdf         # requirements, data design, test plan
+    ├── Sequence-Diagram.png
+    ├── Project - Phase 1.pdf             # requirements, data design, test plan
     └── Project - Phase 2.pdf             # Phase 2 responsibilities
 ```
 
@@ -67,6 +67,8 @@ PartyOn-Phase2/
 | Libraries | none (POSIX sockets, pthreads) | Winsock2 (`-lws2_32`, linked by the Makefile) |
 
 There are no third-party dependencies.
+
+**Windows note:** the Makefile uses `mkdir -p`, `rm -rf` and a shell `for` loop, so run it from **MSYS2** or **Git Bash** with MinGW-w64, not plain `cmd.exe`. Windows behaves differently in one way: Ctrl+C stops the server immediately only while it is waiting for a client. If a client is connected, the server exits after that client disconnects.
 
 ---
 
@@ -288,7 +290,7 @@ The same design carries over to Phase 3: adding more client sessions and a lock 
 make test        # framing and state unit tests (no network needed)
 ```
 
-Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1 (3).pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
+Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
 
 To send raw protocol lines without the client:
 

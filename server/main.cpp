@@ -2,6 +2,9 @@
 //
 // Usage: partyon-server [port]      (default port 5527)
 
+// Winsock headers must come before anything that may include <windows.h>
+#include "net.hpp"
+
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
@@ -17,7 +20,6 @@
 #include "LineFramer.hpp"
 #include "Logger.hpp"
 #include "Protocol.hpp"
-#include "net.hpp"
 
 namespace {
 

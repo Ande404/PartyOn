@@ -8,9 +8,16 @@
     #ifndef WIN32_LEAN_AND_MEAN
         #define WIN32_LEAN_AND_MEAN
     #endif
+    // inet_ntop needs Windows Vista or newer; some MinGW setups default lower
+    #if !defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600
+        #undef _WIN32_WINNT
+        #define _WIN32_WINNT 0x0600
+    #endif
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    #pragma comment(lib, "Ws2_32.lib")
+    #ifdef _MSC_VER
+        #pragma comment(lib, "Ws2_32.lib")
+    #endif
 #else
     #include <arpa/inet.h>
     #include <cerrno>
