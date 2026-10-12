@@ -45,16 +45,18 @@ PartyOn-Phase2/
 │   ├── mock_server.cpp           # fake server used while building the client
 │   ├── test_framer.cpp           # unit tests for message framing
 │   ├── test_state.cpp            # unit tests for commands and response codes
+│   ├── protocol_test.py          # conformance tests against a running server
 │   └── Phase2-TestReport.md      # Phase 2 test report
 └── docs/
     ├── UpdatedProtocolSpecification.md   # authoritative protocol (PartyOn v1.0)
     ├── PartyOn_Client_Server_Architecture_Diagram (1).png
     ├── Sequence-Diagram.png
+    ├── server-log-sample.txt             # server log from three client sessions
     ├── Project - Phase 1.pdf             # requirements, data design, test plan
     └── Project - Phase 2.pdf             # Phase 2 responsibilities
 ```
 
-> **Status:** the server and its unit tests are done on `aluwaga-feature/serverAndAppState`. The client and `tests/mock_server.cpp` are on `feature/client-cli`. Both branches will be merged into `master` for submission. Until then, use `make server` and `make test` on the server branch.
+> **Status:** server and client are merged and work together end to end. All unit and conformance tests pass on macOS. Still open: a Windows build check and a two-machine run (see `tests/Phase2-TestReport.md`).
 
 ---
 
@@ -287,10 +289,15 @@ The same design carries over to Phase 3: adding more client sessions and a lock 
 ## 11. Testing
 
 ```bash
-make test        # framing and state unit tests (no network needed)
+make test                             # framing and state unit tests (no network needed)
+
+./bin/partyon-server &                # conformance tests over real TCP
+python3 tests/protocol_test.py        # optional: [host] [port]
 ```
 
-Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
+`protocol_test.py` prints PASS or FAIL for each test ID (TC-F01 to F09, one per response code, and behavior checks). It works against any running server, including one on another machine.
+
+Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`, and a sample server log is in `docs/server-log-sample.txt`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
 
 To send raw protocol lines without the client:
 

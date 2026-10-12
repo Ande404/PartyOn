@@ -1,0 +1,53 @@
+[2026-10-12 11:16:35] [INFO] PartyOn server listening on 0.0.0.0:5527 (one client at a time)
+[2026-10-12 11:16:35] [INFO] Waiting for a client...
+[2026-10-12 11:16:35] [INFO] Client connected from 127.0.0.1:54386 (conn 1)
+[2026-10-12 11:16:35] [INFO] conn 1 RECV "CREATE_EVENT BdayParty Andrew 10/31/2026 07:00PM"
+[2026-10-12 11:16:35] [INFO] conn 1 SEND 201 Created Event (+1 line)
+[2026-10-12 11:16:35] [INFO] conn 1 RECV "CLAIM_ITEM BdayParty Cake"
+[2026-10-12 11:16:35] [INFO] conn 1 SEND 200 OK
+[2026-10-12 11:16:35] [INFO] conn 1 NOTIFY 210 BdayParty ITEM_CLAIMED Cake claimed by Andrew
+[2026-10-12 11:16:35] [INFO] conn 1 RECV "RSVP BdayParty Yes"
+[2026-10-12 11:16:35] [INFO] conn 1 SEND 200 OK
+[2026-10-12 11:16:35] [INFO] conn 1 NOTIFY 210 BdayParty RSVP_UPDATED Andrew status is now Yes
+[2026-10-12 11:16:35] [INFO] conn 1 RECV "QUIT"
+[2026-10-12 11:16:35] [INFO] conn 1 disconnected (client sent QUIT); session removed with 1 identity
+[2026-10-12 11:16:35] [INFO] Waiting for a client...
+[2026-10-12 11:16:36] [INFO] Client connected from 127.0.0.1:54387 (conn 2)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "JOIN BdayParty Giovanna"
+[2026-10-12 11:16:36] [INFO] conn 2 SEND 200 OK (+1 line) (new guest)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "RSVP BdayParty Maybe2"
+[2026-10-12 11:16:36] [WARN] conn 2 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "RSVP BdayParty Yes"
+[2026-10-12 11:16:36] [INFO] conn 2 SEND 200 OK
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "ITEMLIST BdayParty"
+[2026-10-12 11:16:36] [INFO] conn 2 SEND 200 OK (+2 lines)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "CLAIM_ITEM BdayParty Cake"
+[2026-10-12 11:16:36] [WARN] conn 2 SEND 410 Conflict (item already claimed by Andrew)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "CLAIM_ITEM BdayParty Chips"
+[2026-10-12 11:16:36] [INFO] conn 2 SEND 200 OK
+[2026-10-12 11:16:36] [INFO] conn 2 NOTIFY 210 BdayParty ITEM_CLAIMED Chips claimed by Giovanna
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "UPDATE_EVENT BdayParty 11/01/2026 06:00PM"
+[2026-10-12 11:16:36] [WARN] conn 2 SEND 402 Not Authorized (only the organizer can update the event)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "WHO BdayParty"
+[2026-10-12 11:16:36] [INFO] conn 2 SEND 200 OK (+3 lines)
+[2026-10-12 11:16:36] [INFO] conn 2 RECV "QUIT"
+[2026-10-12 11:16:36] [INFO] conn 2 disconnected (client sent QUIT); session removed with 1 identity
+[2026-10-12 11:16:36] [INFO] Waiting for a client...
+[2026-10-12 11:16:37] [INFO] Client connected from 127.0.0.1:54389 (conn 3)
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "JOIN BdayParty Andrew"
+[2026-10-12 11:16:37] [INFO] conn 3 SEND 200 OK (+1 line) (rejoined as existing guest)
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "UPDATE_EVENT BdayParty 11/01/2026 06:00PM"
+[2026-10-12 11:16:37] [INFO] conn 3 SEND 200 OK
+[2026-10-12 11:16:37] [INFO] conn 3 NOTIFY 210 BdayParty EVENT_UPDATED new event details: 11/01/2026 06:00PM
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "RELEASE_ITEM BdayParty Cake"
+[2026-10-12 11:16:37] [INFO] conn 3 SEND 200 OK
+[2026-10-12 11:16:37] [INFO] conn 3 NOTIFY 210 BdayParty ITEM_RELEASED Cake is available to bring again
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "DELETE_EVENT BdayParty"
+[2026-10-12 11:16:37] [INFO] conn 3 SEND 202 Deleted Event
+[2026-10-12 11:16:37] [INFO] conn 3 NOTIFY 210 BdayParty EVENT_DELETED This event has been deleted
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "WHO BdayParty"
+[2026-10-12 11:16:37] [WARN] conn 3 SEND 401 Not Identified
+[2026-10-12 11:16:37] [INFO] conn 3 RECV "QUIT"
+[2026-10-12 11:16:37] [INFO] conn 3 disconnected (client sent QUIT); session removed with 0 identities
+[2026-10-12 11:16:37] [INFO] Waiting for a client...
+[2026-10-12 11:16:38] [INFO] Shutting down
