@@ -23,6 +23,7 @@ Concurrency, race, and resilience tests (§9.5–9.6) need multiple simultaneous
 | Server build | `make server` (no warnings with `-Wall -Wextra`) |
 | Client build | `make client` |
 | Raw-socket tests | Python 3 (`tests/protocol_test.py`) |
+| CI (GitHub Actions) | `ubuntu-latest` (g++) and `windows-latest` (MSYS2 UCRT64, MinGW-w64 g++), run on every push |
 
 ## 3. How to reproduce
 
@@ -43,6 +44,7 @@ python3 tests/protocol_test.py            # conformance tests over TCP
 | `tests/protocol_test.py` | Live server over TCP: framing, response codes, behavior | **23 / 23 tests pass** |
 | End-to-end with `partyon-client` | Real client against real server, scripted session | **Pass** (display notes in §6) |
 | Client oversized-line handling | Fake server sends 600- and 700-byte lines | **Pass**: warning shown, next reply displayed |
+| GitHub Actions: Linux and Windows | Build (no warnings), unit tests, conformance tests on a live server | **Pass on both** ([run 38276372268](https://github.com/gponce1/PartyOn-Phase2/actions/runs/38276372268)) |
 
 ## 5. Detailed results
 
@@ -107,7 +109,8 @@ Every connection, received command, response code (with the reason for errors), 
 
 ## 7. Open items
 
-- [ ] Build and run on **Windows** (MSYS2 or Git Bash + MinGW-w64): `make`, `make test`, one client session
+- [x] Build and test on **Windows**: build, unit tests, and conformance tests pass on GitHub Actions `windows-latest` (MSYS2 + MinGW-w64)
+- [ ] Interactive client session and Ctrl+C shutdown on a real Windows machine (CI only exercises the server over raw sockets)
 - [ ] One run **across two machines** (Phase 1 §9.2): server on machine A, client on machine B using A's IP and port 5527
 - [ ] Final requirements traceability review (draft below)
 
