@@ -1,0 +1,52 @@
+# Builds PartyOn and runs every test on Linux and Windows.
+# Runs on every push (the result also shows on any open PR for that branch)
+# and can be started by hand from the Actions tab ("Run workflow").
+
+name: Build and test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        # Windows uses MSYS2 + MinGW-w64, the same setup the README describes
+        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Install compiler and Python (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python
+
+      - name: Build server and client
+        run: make
+
+      - name: Unit tests
+        run: make test
+
+      - name: Conformance tests against a running server
+        run: |
+          ./bin/partyon-server &
+          SERVER_PID=$!
+          sleep 2
+          python3 tests/protocol_test.py
+          kill $SERVER_PID || true
+
+      - name: Show server log
+        if: always()
+        run: cat server.log || true
