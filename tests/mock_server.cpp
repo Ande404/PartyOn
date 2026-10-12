@@ -56,16 +56,16 @@ int main() {
 
     sockaddr_in serverAddress{};
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(5000);
+    serverAddress.sin_port = htons(5527);
     serverAddress.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 
-    if (bind(
+    if (::bind(
             serverSocket,
             reinterpret_cast<sockaddr*>(&serverAddress),
             sizeof(serverAddress)
         ) != 0) {
 
-        cerr << "Could not bind to port 5000." << endl;
+        cerr << "Could not bind to port 5527." << endl;
         closeSocket(serverSocket);
 
     #ifdef _WIN32
@@ -75,7 +75,7 @@ int main() {
     }
 
     if (listen(serverSocket, 1) != 0) {
-        cerr << "Could not listen on port 5000." << endl;
+        cerr << "Could not listen on port 5527." << endl;
         closeSocket(serverSocket);
 
     #ifdef _WIN32
@@ -84,7 +84,7 @@ int main() {
         return 1;
     }
 
-    cout << "Mock PartyOn server listening on localhost:5000..." << endl;
+    cout << "Mock PartyOn server listening on localhost:5527..." << endl;
     cout << "Waiting for a client..." << endl;
 
     SocketType clientSocket = accept(serverSocket, nullptr, nullptr);
@@ -146,7 +146,7 @@ int main() {
 
             // Empty command test
             if (message.empty()) {
-                string response = "300 Invalid Command\n";
+                string response = "300 Message Format Error\n";
 
                 send(
                     clientSocket,
@@ -340,7 +340,7 @@ int main() {
                     response = "200 OK\n";
                 }
                 else {
-                    response = "300 Invalid Command\n";
+                    response = "300 Message Format Error\n";
                 }
 
                 send(
