@@ -1,0 +1,263 @@
+# PartyOn two-machine test - server log, 2026-10-12
+# Server: macOS (Apple clang build), VPN address 141.215.94.35, port 5527
+# Client: Windows (MinGW-w64 GCC 15.2 build), VPN address 141.215.95.94
+# Network: both machines on the UM-Dearborn GlobalProtect VPN, different physical networks
+# conn 1      Test-NetConnection reachability check (connect + close)
+# conn 2      interactive partyon-client.exe session on Windows
+# conn 3-31   python tests/protocol_test.py 141.215.94.35 5527 run from Windows: 23/23 passed
+
+[2026-10-12 19:24:49] [INFO] PartyOn server listening on 0.0.0.0:5527 (one client at a time)
+[2026-10-12 19:24:49] [INFO] Waiting for a client...
+[2026-10-12 19:25:22] [INFO] Client connected from 141.215.95.94:55664 (conn 1)
+[2026-10-12 19:25:22] [INFO] conn 1 disconnected (client closed the connection); session removed with 0 identities
+[2026-10-12 19:25:22] [INFO] Waiting for a client...
+[2026-10-12 19:38:00] [INFO] Client connected from 141.215.95.94:63106 (conn 2)
+[2026-10-12 19:38:36] [INFO] conn 2 RECV "CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:38:36] [INFO] conn 2 SEND 201 Created Event (+1 line)
+[2026-10-12 19:39:04] [INFO] conn 2 RECV "CLAIM_ITEM Party1 Chips"
+[2026-10-12 19:39:04] [INFO] conn 2 SEND 200 OK
+[2026-10-12 19:39:04] [INFO] conn 2 NOTIFY 210 Party1 ITEM_CLAIMED Chips claimed by Andrew
+[2026-10-12 19:39:22] [INFO] conn 2 RECV "WHO Party1"
+[2026-10-12 19:39:22] [INFO] conn 2 SEND 200 OK (+2 lines)
+[2026-10-12 19:40:11] [INFO] conn 2 RECV "ITEMLIST Party1"
+[2026-10-12 19:40:11] [INFO] conn 2 SEND 200 OK (+2 lines)
+[2026-10-12 19:40:31] [INFO] conn 2 RECV "RSVP Party1 Yes"
+[2026-10-12 19:40:31] [INFO] conn 2 SEND 200 OK
+[2026-10-12 19:40:31] [INFO] conn 2 NOTIFY 210 Party1 RSVP_UPDATED Andrew status is now Yes
+[2026-10-12 19:40:44] [INFO] conn 2 RECV "WHO Party1"
+[2026-10-12 19:40:44] [INFO] conn 2 SEND 200 OK (+2 lines)
+[2026-10-12 19:47:00] [INFO] conn 2 RECV "QUIT"
+[2026-10-12 19:47:00] [INFO] conn 2 disconnected (client sent QUIT); session removed with 1 identity
+[2026-10-12 19:47:00] [INFO] Waiting for a client...
+[2026-10-12 19:47:21] [INFO] Client connected from 141.215.95.94:49961 (conn 3)
+[2026-10-12 19:47:21] [INFO] conn 3 RECV "CREATE_EVENT F01_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:21] [INFO] conn 3 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:21] [INFO] conn 3 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:21] [INFO] Waiting for a client...
+[2026-10-12 19:47:21] [INFO] Client connected from 141.215.95.94:49962 (conn 4)
+[2026-10-12 19:47:21] [INFO] conn 4 RECV "CREATE_EVENT F02_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:21] [INFO] conn 4 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:22] [INFO] conn 4 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:22] [INFO] Waiting for a client...
+[2026-10-12 19:47:22] [INFO] Client connected from 141.215.95.94:49963 (conn 5)
+[2026-10-12 19:47:22] [INFO] conn 5 RECV "CREATE_EVENT F03_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:22] [INFO] conn 5 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:22] [INFO] conn 5 RECV "WHO F03_185072"
+[2026-10-12 19:47:22] [INFO] conn 5 SEND 200 OK (+2 lines)
+[2026-10-12 19:47:22] [INFO] conn 5 RECV "ITEMLIST F03_185072"
+[2026-10-12 19:47:22] [INFO] conn 5 SEND 200 OK (+1 line)
+[2026-10-12 19:47:22] [INFO] conn 5 RECV "RSVP F03_185072 Purple"
+[2026-10-12 19:47:22] [WARN] conn 5 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
+[2026-10-12 19:47:22] [INFO] conn 5 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:22] [INFO] Waiting for a client...
+[2026-10-12 19:47:22] [INFO] Client connected from 141.215.95.94:49964 (conn 6)
+[2026-10-12 19:47:22] [INFO] conn 6 RECV "CREATE_EVENT F04_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:22] [INFO] conn 6 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:22] [INFO] conn 6 RECV "WHO F04_185072"
+[2026-10-12 19:47:22] [INFO] conn 6 SEND 200 OK (+2 lines)
+[2026-10-12 19:47:23] [INFO] conn 6 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:23] [INFO] Waiting for a client...
+[2026-10-12 19:47:23] [INFO] Client connected from 141.215.95.94:49965 (conn 7)
+[2026-10-12 19:47:23] [INFO] conn 7 RECV "CREATE_EVENT F05_185072 José 10/31/2026 07:00PM"
+[2026-10-12 19:47:23] [INFO] conn 7 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:23] [INFO] conn 7 RECV "WHO F05_185072"
+[2026-10-12 19:47:23] [INFO] conn 7 SEND 200 OK (+2 lines)
+[2026-10-12 19:47:23] [INFO] conn 7 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:23] [INFO] Waiting for a client...
+[2026-10-12 19:47:23] [INFO] Client connected from 141.215.95.94:49967 (conn 8)
+[2026-10-12 19:47:23] [INFO] conn 8 RECV "CREATE_EVENT F06_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:23] [INFO] conn 8 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:23] [INFO] conn 8 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:23] [INFO] Waiting for a client...
+[2026-10-12 19:47:23] [INFO] Client connected from 141.215.95.94:49968 (conn 9)
+[2026-10-12 19:47:23] [INFO] conn 9 RECV ""
+[2026-10-12 19:47:23] [WARN] conn 9 SEND 300 Message Format Error (empty command)
+[2026-10-12 19:47:23] [INFO] conn 9 disconnected (client closed the connection); session removed with 0 identities
+[2026-10-12 19:47:23] [INFO] Waiting for a client...
+[2026-10-12 19:47:23] [INFO] Client connected from 141.215.95.94:49969 (conn 10)
+[2026-10-12 19:47:23] [INFO] conn 10 RECV "CREATE_EVENT F08_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:23] [INFO] conn 10 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:23] [INFO] conn 10 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:23] [INFO] Waiting for a client...
+[2026-10-12 19:47:24] [INFO] Client connected from 141.215.95.94:49971 (conn 11)
+[2026-10-12 19:47:24] [INFO] conn 11 RECV "JOIN F08_185072 Sam"
+[2026-10-12 19:47:24] [INFO] conn 11 SEND 200 OK (+1 line) (new guest)
+[2026-10-12 19:47:24] [INFO] conn 11 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:24] [INFO] Waiting for a client...
+[2026-10-12 19:47:24] [INFO] Client connected from 141.215.95.94:49972 (conn 12)
+[2026-10-12 19:47:24] [WARN] conn 12 RECV <line over 527 bytes, discarded>
+[2026-10-12 19:47:24] [WARN] conn 12 SEND 300 Message Format Error (line longer than 527 bytes)
+[2026-10-12 19:47:24] [WARN] conn 12 RECV <line over 527 bytes, discarded>
+[2026-10-12 19:47:24] [WARN] conn 12 SEND 300 Message Format Error (line longer than 527 bytes)
+[2026-10-12 19:47:24] [INFO] conn 12 RECV "CREATE_EVENT F09_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:24] [INFO] conn 12 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:24] [INFO] conn 12 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:24] [INFO] Waiting for a client...
+[2026-10-12 19:47:24] [INFO] Client connected from 141.215.95.94:49973 (conn 13)
+[2026-10-12 19:47:24] [INFO] conn 13 RECV "CREATE_EVENT R200_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:24] [INFO] conn 13 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:24] [INFO] conn 13 RECV "RSVP R200_185072 Yes"
+[2026-10-12 19:47:24] [INFO] conn 13 SEND 200 OK
+[2026-10-12 19:47:24] [INFO] conn 13 NOTIFY 210 R200_185072 RSVP_UPDATED Andrew status is now Yes
+[2026-10-12 19:47:24] [INFO] conn 13 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:24] [INFO] Waiting for a client...
+[2026-10-12 19:47:25] [INFO] Client connected from 141.215.95.94:49974 (conn 14)
+[2026-10-12 19:47:25] [INFO] conn 14 RECV "CREATE_EVENT R201_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:25] [INFO] conn 14 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:25] [INFO] conn 14 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:25] [INFO] Waiting for a client...
+[2026-10-12 19:47:25] [INFO] Client connected from 141.215.95.94:49975 (conn 15)
+[2026-10-12 19:47:25] [INFO] conn 15 RECV "CREATE_EVENT R202_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:25] [INFO] conn 15 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:25] [INFO] conn 15 RECV "DELETE_EVENT R202_185072"
+[2026-10-12 19:47:25] [INFO] conn 15 SEND 202 Deleted Event
+[2026-10-12 19:47:25] [INFO] conn 15 NOTIFY 210 R202_185072 EVENT_DELETED This event has been deleted
+[2026-10-12 19:47:25] [INFO] conn 15 disconnected (client closed the connection); session removed with 0 identities
+[2026-10-12 19:47:25] [INFO] Waiting for a client...
+[2026-10-12 19:47:25] [INFO] Client connected from 141.215.95.94:49978 (conn 16)
+[2026-10-12 19:47:25] [INFO] conn 16 RECV "CREATE_EVENT R210_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:25] [INFO] conn 16 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:25] [INFO] conn 16 RECV "CLAIM_ITEM R210_185072 Chips"
+[2026-10-12 19:47:25] [INFO] conn 16 SEND 200 OK
+[2026-10-12 19:47:25] [INFO] conn 16 NOTIFY 210 R210_185072 ITEM_CLAIMED Chips claimed by Andrew
+[2026-10-12 19:47:25] [INFO] conn 16 RECV "RELEASE_ITEM R210_185072 Chips"
+[2026-10-12 19:47:25] [INFO] conn 16 SEND 200 OK
+[2026-10-12 19:47:25] [INFO] conn 16 NOTIFY 210 R210_185072 ITEM_RELEASED Chips is available to bring again
+[2026-10-12 19:47:25] [INFO] conn 16 RECV "UPDATE_EVENT R210_185072 11/01/2026 06:30PM"
+[2026-10-12 19:47:25] [INFO] conn 16 SEND 200 OK
+[2026-10-12 19:47:25] [INFO] conn 16 NOTIFY 210 R210_185072 EVENT_UPDATED new event details: 11/01/2026 06:30PM
+[2026-10-12 19:47:25] [INFO] conn 16 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:25] [INFO] Waiting for a client...
+[2026-10-12 19:47:26] [INFO] Client connected from 141.215.95.94:49993 (conn 17)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "CREATE_EVENT R300_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:26] [INFO] conn 17 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "RSVP R300_185072 Purple"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "DANCE"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (unknown command)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "who R300_185072"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (unknown command)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "WHO  R300_185072"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (WHO takes 1 field(s), got 2)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "WHO R300_185072 extra"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (WHO takes 1 field(s), got 2)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "HELP"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (unknown command)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "QUIT now"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (QUIT takes 0 field(s), got 1)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "CREATE_EVENT X U 02/30/2026 07:00PM"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (invalid date (expected MM/DD/YYYY) in position 3)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "CREATE_EVENT X U 10/31/2026 13:00PM"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (invalid time (expected HH:MMAM or HH:MMPM) in position 4)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "JOIN R300_185072 uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (invalid field in position 2)
+[2026-10-12 19:47:26] [INFO] conn 17 RECV "JOIN R300_185072 Bad\xFF"
+[2026-10-12 19:47:26] [WARN] conn 17 SEND 300 Message Format Error (not valid UTF-8)
+[2026-10-12 19:47:26] [INFO] conn 17 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:26] [INFO] Waiting for a client...
+[2026-10-12 19:47:26] [INFO] Client connected from 141.215.95.94:49995 (conn 18)
+[2026-10-12 19:47:26] [INFO] conn 18 RECV "RSVP R401_185072 Yes"
+[2026-10-12 19:47:26] [WARN] conn 18 SEND 401 Not Identified
+[2026-10-12 19:47:26] [INFO] conn 18 RECV "RSVP R401_185072 Purple"
+[2026-10-12 19:47:26] [WARN] conn 18 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
+[2026-10-12 19:47:26] [INFO] conn 18 disconnected (client closed the connection); session removed with 0 identities
+[2026-10-12 19:47:26] [INFO] Waiting for a client...
+[2026-10-12 19:47:27] [INFO] Client connected from 141.215.95.94:50067 (conn 19)
+[2026-10-12 19:47:27] [INFO] conn 19 RECV "CREATE_EVENT R402_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:27] [INFO] conn 19 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:27] [INFO] conn 19 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:27] [INFO] Waiting for a client...
+[2026-10-12 19:47:27] [INFO] Client connected from 141.215.95.94:54810 (conn 20)
+[2026-10-12 19:47:27] [INFO] conn 20 RECV "JOIN R402_185072 Sam"
+[2026-10-12 19:47:27] [INFO] conn 20 SEND 200 OK (+1 line) (new guest)
+[2026-10-12 19:47:27] [INFO] conn 20 RECV "UPDATE_EVENT R402_185072 11/01/2026 06:30PM"
+[2026-10-12 19:47:27] [WARN] conn 20 SEND 402 Not Authorized (only the organizer can update the event)
+[2026-10-12 19:47:27] [INFO] conn 20 RECV "DELETE_EVENT R402_185072"
+[2026-10-12 19:47:27] [WARN] conn 20 SEND 402 Not Authorized (only the organizer can delete the event)
+[2026-10-12 19:47:27] [INFO] conn 20 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:27] [INFO] Waiting for a client...
+[2026-10-12 19:47:27] [INFO] Client connected from 141.215.95.94:54812 (conn 21)
+[2026-10-12 19:47:27] [INFO] conn 21 RECV "JOIN nope_185072 Sam"
+[2026-10-12 19:47:27] [WARN] conn 21 SEND 404 Not Found (no such event)
+[2026-10-12 19:47:27] [INFO] conn 21 disconnected (client closed the connection); session removed with 0 identities
+[2026-10-12 19:47:27] [INFO] Waiting for a client...
+[2026-10-12 19:47:27] [INFO] Client connected from 141.215.95.94:54813 (conn 22)
+[2026-10-12 19:47:27] [INFO] conn 22 RECV "CREATE_EVENT R410_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:27] [INFO] conn 22 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:27] [INFO] conn 22 RECV "CREATE_EVENT R410_185072 Kim 10/31/2026 07:00PM"
+[2026-10-12 19:47:27] [WARN] conn 22 SEND 410 Conflict (event code already in use)
+[2026-10-12 19:47:27] [INFO] conn 22 RECV "CLAIM_ITEM R410_185072 Chips"
+[2026-10-12 19:47:27] [INFO] conn 22 SEND 200 OK
+[2026-10-12 19:47:27] [INFO] conn 22 NOTIFY 210 R410_185072 ITEM_CLAIMED Chips claimed by Andrew
+[2026-10-12 19:47:28] [INFO] conn 22 RECV "CLAIM_ITEM R410_185072 Chips"
+[2026-10-12 19:47:28] [WARN] conn 22 SEND 410 Conflict (item already claimed by Andrew)
+[2026-10-12 19:47:28] [INFO] conn 22 RECV "RELEASE_ITEM R410_185072 Soda"
+[2026-10-12 19:47:28] [WARN] conn 22 SEND 410 Conflict (item is not on the list)
+[2026-10-12 19:47:28] [INFO] conn 22 RECV "JOIN R410_185072 Andrew"
+[2026-10-12 19:47:28] [WARN] conn 22 SEND 410 Conflict (connection already identified in this event)
+[2026-10-12 19:47:28] [INFO] conn 22 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:28] [INFO] Waiting for a client...
+[2026-10-12 19:47:28] [INFO] Client connected from 141.215.95.94:54814 (conn 23)
+[2026-10-12 19:47:28] [INFO] conn 23 RECV "CREATE_EVENT B01_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:28] [INFO] conn 23 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:28] [INFO] conn 23 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:28] [INFO] Waiting for a client...
+[2026-10-12 19:47:28] [INFO] Client connected from 141.215.95.94:54815 (conn 24)
+[2026-10-12 19:47:28] [INFO] conn 24 RECV "JOIN B01_185072 Sam"
+[2026-10-12 19:47:28] [INFO] conn 24 SEND 200 OK (+1 line) (new guest)
+[2026-10-12 19:47:28] [INFO] conn 24 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:28] [INFO] Waiting for a client...
+[2026-10-12 19:47:28] [INFO] Client connected from 141.215.95.94:54816 (conn 25)
+[2026-10-12 19:47:28] [INFO] conn 25 RECV "CREATE_EVENT B02_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:28] [INFO] conn 25 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:28] [INFO] conn 25 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:28] [INFO] Waiting for a client...
+[2026-10-12 19:47:29] [INFO] Client connected from 141.215.95.94:54817 (conn 26)
+[2026-10-12 19:47:29] [INFO] conn 26 RECV "JOIN B02_185072 Sam"
+[2026-10-12 19:47:29] [INFO] conn 26 SEND 200 OK (+1 line) (new guest)
+[2026-10-12 19:47:29] [INFO] conn 26 RECV "RSVP B02_185072 No"
+[2026-10-12 19:47:29] [INFO] conn 26 SEND 200 OK
+[2026-10-12 19:47:29] [INFO] conn 26 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:29] [INFO] Waiting for a client...
+[2026-10-12 19:47:29] [INFO] Client connected from 141.215.95.94:54818 (conn 27)
+[2026-10-12 19:47:29] [INFO] conn 27 RECV "JOIN B02_185072 Sam"
+[2026-10-12 19:47:29] [INFO] conn 27 SEND 200 OK (+1 line) (rejoined as existing guest)
+[2026-10-12 19:47:29] [INFO] conn 27 RECV "WHO B02_185072"
+[2026-10-12 19:47:29] [INFO] conn 27 SEND 200 OK (+3 lines)
+[2026-10-12 19:47:29] [INFO] conn 27 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:29] [INFO] Waiting for a client...
+[2026-10-12 19:47:29] [INFO] Client connected from 141.215.95.94:54820 (conn 28)
+[2026-10-12 19:47:29] [INFO] conn 28 RECV "CREATE_EVENT B03_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:29] [INFO] conn 28 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:29] [INFO] conn 28 RECV "DELETE_EVENT B03_185072"
+[2026-10-12 19:47:29] [INFO] conn 28 SEND 202 Deleted Event
+[2026-10-12 19:47:29] [INFO] conn 28 NOTIFY 210 B03_185072 EVENT_DELETED This event has been deleted
+[2026-10-12 19:47:29] [INFO] conn 28 RECV "WHO B03_185072"
+[2026-10-12 19:47:29] [WARN] conn 28 SEND 401 Not Identified
+[2026-10-12 19:47:29] [INFO] conn 28 RECV "JOIN B03_185072 Sam"
+[2026-10-12 19:47:29] [WARN] conn 28 SEND 404 Not Found (no such event)
+[2026-10-12 19:47:29] [INFO] conn 28 RECV "CREATE_EVENT B03_185072 Kim 10/31/2026 07:00PM"
+[2026-10-12 19:47:29] [INFO] conn 28 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:30] [INFO] conn 28 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:30] [INFO] Waiting for a client...
+[2026-10-12 19:47:30] [INFO] Client connected from 141.215.95.94:54821 (conn 29)
+[2026-10-12 19:47:30] [INFO] conn 29 RECV "QUIT"
+[2026-10-12 19:47:30] [INFO] conn 29 disconnected (client sent QUIT); session removed with 0 identities
+[2026-10-12 19:47:30] [INFO] Waiting for a client...
+[2026-10-12 19:47:30] [INFO] Client connected from 141.215.95.94:54822 (conn 30)
+[2026-10-12 19:47:30] [INFO] conn 30 RECV "CREATE_EVENT B04_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:30] [INFO] conn 30 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:30] [INFO] conn 30 disconnected (client closed the connection); session removed with 1 identity
+[2026-10-12 19:47:30] [INFO] Waiting for a client...
+[2026-10-12 19:47:30] [INFO] Client connected from 141.215.95.94:54823 (conn 31)
+[2026-10-12 19:47:30] [INFO] conn 31 RECV "CREATE_EVENT B05a_185072 Andrew 10/31/2026 07:00PM"
+[2026-10-12 19:47:30] [INFO] conn 31 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:30] [INFO] conn 31 RECV "CREATE_EVENT B05b_185072 Drew 10/31/2026 07:00PM"
+[2026-10-12 19:47:30] [INFO] conn 31 SEND 201 Created Event (+1 line)
+[2026-10-12 19:47:30] [INFO] conn 31 RECV "WHO B05b_185072"
+[2026-10-12 19:47:30] [INFO] conn 31 SEND 200 OK (+2 lines)
+[2026-10-12 19:47:30] [INFO] conn 31 RECV "CLAIM_ITEM B05a_185072 Cake"
+[2026-10-12 19:47:30] [INFO] conn 31 SEND 200 OK
+[2026-10-12 19:47:30] [INFO] conn 31 NOTIFY 210 B05a_185072 ITEM_CLAIMED Cake claimed by Andrew
+[2026-10-12 19:47:30] [INFO] conn 31 disconnected (client closed the connection); session removed with 2 identities
+[2026-10-12 19:47:30] [INFO] Waiting for a client...
