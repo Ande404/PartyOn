@@ -59,6 +59,16 @@ void formatErrors() {
     CHECK_EQ(h.lines(s, "QUIT now"), kFormatError);
     CHECK_EQ(Dispatcher::oversizedLine().lines, kFormatError);
 
+    // Log notes explain why (the wire response is still just 300)
+    const std::string extraSpace = "empty field (extra space?)";
+    CHECK_EQ(h.send(s, "").note, std::string("empty command"));
+    CHECK_EQ(h.send(s, "WHO  Party1").note, extraSpace);
+    CHECK_EQ(h.send(s, " WHO Party1").note, extraSpace);
+    CHECK_EQ(h.send(s, "WHO Party1 ").note, extraSpace);
+    CHECK_EQ(h.send(s, " ").note, extraSpace);
+    CHECK_EQ(h.send(s, "WHO Party1 extra").note, std::string("WHO takes 1 field(s), got 2"));
+    CHECK_EQ(h.send(s, "DANCE Party1").note, std::string("unknown command"));
+
     // Bad dates and times
     CHECK_EQ(h.lines(s, "CREATE_EVENT P U 02/30/2026 03:00PM"), kFormatError);
     CHECK_EQ(h.lines(s, "CREATE_EVENT P U 02/29/2026 03:00PM"), kFormatError);  // not a leap year
