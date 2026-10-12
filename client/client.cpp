@@ -260,10 +260,24 @@ void recordResponseLine(const string& line) {
 }
 
 
+// Protocol limit for one line, including the terminating '\n'
+const size_t MAX_MESSAGE_BYTES = 527;
+
+void displayOversizedWarning() {
+    lock_guard<mutex> lock(outputMutex);
+
+    cout << endl;
+    cout << "[Warning] Discarded a server message longer than "
+         << MAX_MESSAGE_BYTES << " bytes." << endl;
+}
+
 // Receives complete protocol lines from the server
 void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
     char buffer[1024];
     string receiveBuffer;
+
+    // True while skipping an oversized line up to its '\n'
+    bool discardingOversizedLine = false;
 
     while (running) {
         int bytesReceived = recv(
@@ -305,6 +319,18 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
 
             receiveBuffer.erase(0, newlinePosition + 1);
 
+            // Rest of an oversized line that was already reported
+            if (discardingOversizedLine) {
+                discardingOversizedLine = false;
+                continue;
+            }
+
+            // Line plus its '\n' is over the protocol limit
+            if (line.size() + 1 > MAX_MESSAGE_BYTES) {
+                displayOversizedWarning();
+                continue;
+            }
+
             // Accept CRLF but remove the optional '\r'
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
@@ -321,6 +347,17 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
             if (!isNotification) {
                 recordResponseLine(line);
             }
+        }
+
+        // More than 527 bytes with no '\n' is an oversized line:
+        // drop it and keep dropping bytes until the next '\n'
+        if (discardingOversizedLine) {
+            receiveBuffer.clear();
+        }
+        else if (receiveBuffer.size() > MAX_MESSAGE_BYTES) {
+            receiveBuffer.clear();
+            discardingOversizedLine = true;
+            displayOversizedWarning();
         }
     }
 }
@@ -410,7 +447,7 @@ int main() {
         }
 
         // Protocol limit includes the terminating '\n'
-        if (command.size() + 1 > 527) {
+        if (command.size() + 1 > MAX_MESSAGE_BYTES) {
             cout << "Message exceeds the 527-byte protocol limit." << endl;
             continue;
         }

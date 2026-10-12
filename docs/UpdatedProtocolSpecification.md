@@ -195,7 +195,11 @@ JOIN <EventCode> <UserName>
 
 All fields are required. `<EventCode>` must match an existing event, and `<UserName>` must satisfy the field rules in Message Encoding and Limits.
 
-**Server Behavior (success):** The server records the identity `(EventCode -> UserName)` for this connection and returns a `200 OK` message, followed by a message indicating that they are a guest for this event (a two-line response).
+**Server Behavior (success):** The server records the identity `(EventCode -> UserName)` for this connection and returns a `200 OK` message, followed by a confirmation line that they are a guest of the event and shows the event's current date and time (a two-line response):
+
+```
+<UserName>, you are now a guest of <EventCode> (<Date> <Time>).
+```
 
 - If `<UserName>` is not yet a guest of the event, a new guest is added with an RSVP status of `Maybe`.
 - If `<UserName>` is already a guest of the event, this is a rejoin: the guest keeps their existing RSVP status and the connection is identified as that guest.
@@ -204,7 +208,7 @@ All fields are required. `<EventCode>` must match an existing event, and `<UserN
 ```
 c: JOIN Party1 User1
 s: 200 OK
-s: User1, you are now a guest of Party1.
+s: User1, you are now a guest of Party1 (09/22/2026 03:00PM).
 ```
 
 **Errors:**
