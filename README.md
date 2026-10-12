@@ -297,6 +297,8 @@ python3 tests/protocol_test.py        # optional: [host] [port]
 
 `protocol_test.py` prints PASS or FAIL for each test ID (TC-F01 to F09, one per response code, and behavior checks). It works against any running server, including one on another machine.
 
+**Automatic checks (GitHub Actions):** every push builds the project and runs the unit and conformance tests on **Linux and Windows** (`.github/workflows/build.yml`). See the repo's **Actions** tab, or the ✅/❌ next to a commit or PR. To start a run by hand, open Actions → *Build and test* → **Run workflow**.
+
 Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`, and a sample server log is in `docs/server-log-sample.txt`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
 
 To send raw protocol lines without the client:
