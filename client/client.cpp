@@ -3,21 +3,43 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-    #pragma comment(lib, "Ws2_32.lib")
+
+#ifdef _MSC_VER
+#pragma comment(lib, "Ws2_32.lib")
+#endif
+
 #else
-    #include <sys/types.h>
-    #include <sys/socket.h>
-    #include <arpa/inet.h>
-    #include <netdb.h>
-    #include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <unistd.h>
 #endif
 
 using namespace std;
 mutex outputMutex;
+
+enum class ResponseShape {
+    SingleLine,
+    TwoLines,
+    UntilEnd
+};
+
+mutex responseMutex;
+condition_variable responseCv;
+
+bool waitingForResponse = false;
+bool responseStarted = false;
+bool responseComplete = false;
+
+int responseLinesSeen = 0;
+
+ResponseShape expectedResponseShape = ResponseShape::SingleLine;
 
 #ifdef _WIN32
     using SocketType = SOCKET;
@@ -123,18 +145,120 @@ bool sendMessage(SocketType socketDescriptor, const string& message) {
     return true;
 }
 
-void displayServerLine(const string& line) {
+bool isWaitingForResponse() {
+    lock_guard<mutex> lock(responseMutex);
+    return waitingForResponse;
+}
+
+
+void displayServerLine(
+    const string& line,
+    bool isNotification
+) {
     lock_guard<mutex> lock(outputMutex);
 
-    if (line.rfind("210 ", 0) == 0) {
+    if (isNotification) {
         cout << endl;
-        cout << "[Notification] " << line << endl;
+        cout << "[Notification] "
+         << line << endl;
+
+        if (!isWaitingForResponse()) {
+            cout << "PartyOn> " << flush;
+        }
     }
     else {
         cout << endl;
         cout << line << endl;
     }
 }
+
+
+
+ResponseShape responseShapeForCommand(const string& command) {
+    string commandName = command.substr(0, command.find(' '));
+
+    if (commandName == "JOIN" ||
+        commandName == "CREATE_EVENT") {
+        return ResponseShape::TwoLines;
+    }
+
+    if (commandName == "ITEMLIST" ||
+        commandName == "WHO") {
+        return ResponseShape::UntilEnd;
+    }
+
+    return ResponseShape::SingleLine;
+}
+
+void beginResponseWait(const string& command) {
+    lock_guard<mutex> lock(responseMutex);
+
+    expectedResponseShape = responseShapeForCommand(command);
+
+    waitingForResponse = true;
+    responseStarted = false;
+    responseComplete = false;
+    responseLinesSeen = 0;
+}
+
+bool lineIsNotification(const string& line) {
+    lock_guard<mutex> lock(responseMutex);
+
+    // If we are already inside a multi-line response,
+    // treat the line as part of that response.
+    if (waitingForResponse && responseStarted) {
+        return false;
+    }
+
+    return line.rfind("210 ", 0) == 0;
+}
+
+void recordResponseLine(const string& line) {
+    lock_guard<mutex> lock(responseMutex);
+
+    if (!waitingForResponse) {
+        return;
+    }
+
+    if (!responseStarted) {
+        responseStarted = true;
+        responseLinesSeen = 1;
+
+        // 3xx and 4xx responses are one-line errors.
+        if (!line.empty() &&
+            (line[0] == '3' || line[0] == '4')) {
+
+            responseComplete = true;
+        }
+        else if (expectedResponseShape ==
+                 ResponseShape::SingleLine) {
+
+            responseComplete = true;
+        }
+    }
+    else {
+        ++responseLinesSeen;
+
+        if (expectedResponseShape ==
+                ResponseShape::TwoLines &&
+            responseLinesSeen >= 2) {
+
+            responseComplete = true;
+        }
+        else if (expectedResponseShape ==
+                     ResponseShape::UntilEnd &&
+                 line == "END") {
+
+            responseComplete = true;
+        }
+    }
+
+    if (responseComplete) {
+        waitingForResponse = false;
+        responseCv.notify_all();
+    }
+}
+
 
 // Receives complete protocol lines from the server
 void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
@@ -158,6 +282,14 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
             }
 
             running = false;
+
+            {
+                lock_guard<mutex> lock(responseMutex);
+                responseComplete = true;
+            }
+
+            responseCv.notify_all();
+
             break;
         }
 
@@ -178,7 +310,17 @@ void receiveLoop(SocketType socketDescriptor, atomic<bool>& running) {
                 line.pop_back();
             }
 
-            displayServerLine(line);
+            bool isNotification =
+                lineIsNotification(line);
+
+            displayServerLine(
+                line,
+                isNotification
+            );
+
+            if (!isNotification) {
+                recordResponseLine(line);
+            }
         }
     }
 }
@@ -289,6 +431,8 @@ int main() {
             break;
         }
 
+        beginResponseWait(command);
+
         if (!sendMessage(clientSocket, command)) {
             cout << "Connection to server was lost." << endl;
 
@@ -296,6 +440,16 @@ int main() {
             shutdownSocket(clientSocket);
 
             break;
+        }
+        {
+            unique_lock<mutex> lock(responseMutex);
+
+            responseCv.wait(
+                lock,
+                [&running] {
+                    return responseComplete || !running.load();
+                }
+            );
         }
     }
 
