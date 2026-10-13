@@ -52,6 +52,7 @@ PartyOn-Phase2/
     ├── PartyOn_Client_Server_Architecture_Diagram (1).png
     ├── Sequence-Diagram.png
     ├── server-log-sample.txt             # server log from three client sessions
+    ├── two-machine-log.txt               # server log: macOS server, Windows client over VPN
     ├── Project - Phase 1.pdf             # requirements, data design, test plan
     └── Project - Phase 2.pdf             # Phase 2 responsibilities
 ```
@@ -145,6 +146,33 @@ Server Port: 5527
 - For a server on another machine, use that machine's IP address and make sure its firewall allows TCP port 5527.
 
 After connecting, the client shows the PartyOn banner and the command menu. Type a command at the `PartyOn>` prompt. Notifications from the server can arrive at any time and are shown with a `[Notification]` prefix.
+
+**Building only the client on Windows without `make`:** if MinGW-w64 `g++` is installed, run these one at a time in PowerShell:
+
+```powershell
+g++ -std=c++17 -O2 client/client.cpp -o partyon-client.exe -lws2_32 -pthread
+.\partyon-client.exe
+```
+
+### Server and client on different machines
+
+If both machines are on the same Wi-Fi, use the server's local IP. If they're on **different networks**, connect both to the **school VPN (GlobalProtect)**; we tested this setup. Then:
+
+1. **Server machine: find your VPN address.**
+   - macOS: `ifconfig | awk '/^[a-z]/{iface=$1} /inet /{print iface, $2}'` and look for the `141.215.x.x` line (usually a `utun` interface)
+   - Windows: `Get-NetIPAddress -AddressFamily IPv4 | Format-Table InterfaceAlias, IPAddress`
+2. **Server machine: allow the server through the firewall.** On macOS the firewall blocks our unsigned binary until you add a rule. Repeat this after each rebuild:
+   ```bash
+   sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add "$(pwd)/bin/partyon-server"
+   sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "$(pwd)/bin/partyon-server"
+   ```
+   Run it from the repository root. On Windows, click **Allow** when the firewall prompt appears.
+3. **Start the server**, then **check reachability from the client machine**:
+   - Windows: `Test-NetConnection -ComputerName <server-VPN-IP> -Port 5527` should print `TcpTestSucceeded : True`
+   - macOS/Linux: `nc -vz <server-VPN-IP> 5527` should report "succeeded"
+4. **Run the client** with the server's VPN IP and port `5527`, or run `python3 tests/protocol_test.py <server-VPN-IP> 5527`.
+
+The server log shows each client's VPN address. A sample run is in `docs/two-machine-log.txt`.
 
 ---
 
@@ -316,6 +344,9 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 |---|---|
 | `bind failed: Address already in use` | Another program, or an earlier server run, is using the port. Wait a few seconds, or run on another port (`./bin/partyon-server 6000`). |
 | Client prints `Could not connect to the PartyOn server.` | Check that the server is running, that the host and port are right, and that the firewall allows the port. |
+| Two machines: connection times out, nothing appears in the server log | Make sure **both** machines are connected to the VPN (the client must have a `141.215.x.x` address too), and add the macOS firewall rule from §6. |
+| `socketfilterfw`: "The file path you specified does not exist" | Run the command from the repository root, or give the full path to `bin/partyon-server`. |
+| `ifconfig \| grep utun` shows no address while on the VPN | Use the `awk` command in §6. It lists every interface with an IPv4 address. |
 | Client connects but nothing happens | Phase 2 serves one client at a time, so another client may still be connected. Quit that client first. |
 | Every command returns `300` | Commands are case-sensitive and uppercase, with single spaces and no extra fields. |
 | `401 Not Identified` | `JOIN` or `CREATE_EVENT` the event on this connection first. Identities are lost when you reconnect. |

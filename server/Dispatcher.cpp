@@ -61,12 +61,23 @@ Result Dispatcher::handle(SessionId session, const std::string& line) {
         return formatError("not valid UTF-8");
     }
 
+    if (line.empty()) {
+        return formatError("empty command");
+    }
+
     const std::vector<std::string> fields = splitFields(line);
     const std::string& command = fields[0];
 
+    // A leading, trailing, or doubled space shows up as an empty field
+    for (const std::string& field : fields) {
+        if (field.empty()) {
+            return formatError("empty field (extra space?)");
+        }
+    }
+
     auto spec = kCommands.find(command);
     if (spec == kCommands.end()) {
-        return formatError(command.empty() ? "empty command" : "unknown command");
+        return formatError("unknown command");
     }
 
     const std::vector<ArgKind>& expected = spec->second;

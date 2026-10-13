@@ -44,6 +44,7 @@ python3 tests/protocol_test.py            # conformance tests over TCP
 | `tests/protocol_test.py` | Live server over TCP: framing, response codes, behavior | **23 / 23 tests pass** |
 | End-to-end with `partyon-client` | Real client against real server, scripted session | **Pass** (display notes in §6) |
 | Client oversized-line handling | Fake server sends 600- and 700-byte lines | **Pass**: warning shown, next reply displayed |
+| **Two machines over VPN** (macOS server, Windows client) | Interactive client session + full conformance suite across the network | **Pass**: 23 / 23, see §5.4 |
 | GitHub Actions: Linux and Windows | Build (no warnings), unit tests, conformance tests on a live server | **Pass on both** ([run 38276372268](https://github.com/gponce1/PartyOn-Phase2/actions/runs/38276372268)) |
 
 ## 5. Detailed results
@@ -92,7 +93,24 @@ Error precedence checks: a malformed command returns 300 even when the user isn'
 | — | Abrupt client disconnect: session removed, server keeps running | Pass (raw-socket run) |
 | — | Ctrl+C on the server: sockets closed, exit code 0 | Pass (macOS) |
 
-### 5.4 Logging
+### 5.4 Two-machine test (Phase 1 §9.2)
+
+| | Server | Client |
+|---|---|---|
+| OS / build | macOS, Apple clang | Windows, MinGW-w64 GCC 15.2 (`g++ -std=c++17 client/client.cpp -lws2_32 -pthread`) |
+| Network | UM-Dearborn GlobalProtect VPN, `141.215.94.35` | Same VPN from a home network, `141.215.95.94` |
+
+| Step | Result |
+|---|---|
+| Reachability: `Test-NetConnection 141.215.94.35 -Port 5527` from Windows | `TcpTestSucceeded : True` |
+| Interactive `partyon-client.exe` session: CREATE_EVENT, CLAIM_ITEM, WHO, ITEMLIST, RSVP, QUIT | All responses and notifications correct; clean disconnect |
+| `python tests/protocol_test.py 141.215.94.35 5527` from Windows | **23 / 23 pass** |
+
+The full server log for this run is in `docs/two-machine-log.txt`. Setup notes:
+- The client machine has to be connected to the VPN. A first attempt from the home network failed, as expected, because the VPN address can only be reached from inside the VPN.
+- macOS's firewall blocks our unsigned server binary until an allow rule is added (`socketfilterfw --add` / `--unblockapp`). The README troubleshooting section has the commands.
+
+### 5.5 Logging
 
 Every connection, received command, response code (with the reason for errors), notification, and disconnect is logged with a timestamp to the terminal and `server.log`. A sample from three client sessions is in `docs/server-log-sample.txt`.
 
@@ -110,15 +128,16 @@ Every connection, received command, response code (with the reason for errors), 
 ## 7. Open items
 
 - [x] Build and test on **Windows**: build, unit tests, and conformance tests pass on GitHub Actions `windows-latest` (MSYS2 + MinGW-w64)
-- [ ] Interactive client session and Ctrl+C shutdown on a real Windows machine (CI only exercises the server over raw sockets)
-- [ ] One run **across two machines** (Phase 1 §9.2): server on machine A, client on machine B using A's IP and port 5527
+- [x] Interactive client session on a real Windows machine (§5.4)
+- [x] One run **across two machines** (Phase 1 §9.2): macOS server, Windows client, over the school VPN (§5.4)
+- [ ] Optional: run the *server* on Windows and check that Ctrl+C shuts it down cleanly (CI only kills the process)
 - [ ] Final requirements traceability review (draft below)
 
 ## 8. Requirements traceability (draft)
 
 | Req | Summary | Phase 2 status | Evidence |
 |---|---|---|---|
-| FR-01 | Connect by host/IP and port | Met | Client prompts; E2E run |
+| FR-01 | Connect by host/IP and port | Met | Client prompts; E2E run; two-machine run over VPN (§5.4) |
 | FR-02 | Provide a username | Met | JOIN / CREATE_EVENT |
 | FR-03 | Join an existing event | Met | TC-B01, RC-404 |
 | FR-04 | Confirm or change attendance | Met | RC-200, TC-B02 |
