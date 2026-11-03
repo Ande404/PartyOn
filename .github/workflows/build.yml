@@ -47,7 +47,11 @@ jobs:
           sleep 2
           python3 tests/protocol_test.py
           python3 tests/concurrency_test.py
+          python3 tests/load_test.py --clients 10,25 --commands 20
           kill $SERVER_PID || true
+
+      - name: Persistence and restart tests (starts its own server)
+        run: python3 tests/persistence_test.py
 
       - name: Show server log
         if: always()
