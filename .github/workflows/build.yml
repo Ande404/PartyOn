@@ -1,4 +1,5 @@
-# Builds PartyOn and runs every test on Linux and Windows.
+# Builds PartyOn and runs every test on Linux and Windows, plus a
+# ThreadSanitizer job that checks the multi-client server for data races.
 # Runs on every push (the result also shows on any open PR for that branch)
 # and can be started by hand from the Actions tab ("Run workflow").
 
@@ -39,14 +40,49 @@ jobs:
       - name: Unit tests
         run: make test
 
-      - name: Conformance tests against a running server
+      - name: Protocol and multi-client tests against a running server
         run: |
           ./bin/partyon-server &
           SERVER_PID=$!
           sleep 2
           python3 tests/protocol_test.py
+          python3 tests/concurrency_test.py
           kill $SERVER_PID || true
 
       - name: Show server log
         if: always()
         run: cat server.log || true
+
+  # Data-race detection: the unit tests and a live server, both built with ThreadSanitizer
+  tsan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      # Newer runner kernels randomize memory more than TSan supports
+      - name: Allow ThreadSanitizer's memory layout
+        run: sudo sysctl vm.mmap_rnd_bits=28
+
+      - name: Unit tests under ThreadSanitizer
+        run: make tsan
+
+      - name: Live multi-client tests against a ThreadSanitizer server
+        run: |
+          make BUILD_DIR=build-tsan BIN_DIR=bin-tsan \
+            CXXFLAGS="-std=c++17 -Wall -Wextra -O1 -g -fsanitize=thread" \
+            LDLIBS="-pthread -fsanitize=thread" bin-tsan/partyon-server
+          ./bin-tsan/partyon-server 2> tsan-server.txt &
+          SERVER_PID=$!
+          sleep 2
+          python3 tests/protocol_test.py
+          python3 tests/concurrency_test.py
+          kill -INT $SERVER_PID
+          sleep 3
+          if grep -q "WARNING: ThreadSanitizer" tsan-server.txt; then
+            cat tsan-server.txt
+            exit 1
+          fi
+          echo "No data races reported"

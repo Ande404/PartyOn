@@ -21,7 +21,7 @@ PartyOn is a client–server application for organizing small events such as bir
 
 When something changes, the server pushes a **notification** to the affected users, so nobody works from stale information.
 
-Phase 2 delivers a working **one-client / one-server** version over TCP (*Level 1* in the protocol specification). Phase 3 will add concurrent clients.
+Phase 3 serves **many clients at once** over TCP (protocol spec v2, `docs/ProtocolSpecification-v2.md`). Shared event state is protected per event, conflicting operations are resolved first come, first served, and a failing or stalled client never affects the others.
 
 ---
 
@@ -99,32 +99,29 @@ make clean      # removes bin/ and object files
 On startup the server prints something like:
 
 ```
-[2026-10-11 14:02:10] [INFO] PartyOn server listening on 0.0.0.0:5527 (one client at a time)
-[2026-10-11 14:02:10] [INFO] Waiting for a client...
+[2026-11-03 14:02:10] [INFO] PartyOn server listening on 0.0.0.0:5527 (multiple clients, 1000-line output limit per client)
 ```
 
 - **Default port: `5527`.** The team moved off port 5000 because macOS uses it for the AirPlay Receiver, so the server often cannot bind there on a Mac.
 - The server listens on all interfaces (`0.0.0.0`), so a client on another machine can connect using the server's IP address.
-- **Phase 2 serves one client at a time.** Another client that connects while one is being served waits in the operating system's queue until the first one disconnects.
-- When a client sends `QUIT` or drops, the server cleans up that session and accepts the next client. **The server keeps running.**
-- To stop the server, press **Ctrl+C**. It closes its sockets and exits cleanly. The protocol has no shutdown command.
+- **Many clients at once.** Every connection is served immediately, with no fixed maximum. Each connection is a *session* with its own ID in the log.
+- When a client sends `QUIT`, drops, or sends bad input, only that session is affected. **The server and every other client keep running.**
+- A client that stops reading is disconnected once **1000 lines** are waiting for it, so it can't hold up notifications to anyone else.
+- To stop the server, press **Ctrl+C** (on Windows too). It stops accepting, closes every session, and exits. Clients see an ordinary disconnect.
 
 ### Server log
 
-Every connection, command, response code and disconnect goes both to the terminal and to `server.log` in the directory you started the server from:
+Every connection, applied command (with its result and how many connections were notified), and disconnect (with the reason) goes both to the terminal and to `server.log` in the directory you started the server from:
 
 ```
-[2026-10-11 14:02:31] [INFO] Client connected from 127.0.0.1:54012 (conn 1)
-[2026-10-11 14:02:35] [INFO] conn 1 RECV "CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM"
-[2026-10-11 14:02:35] [INFO] conn 1 SEND 201 Created Event (+1 line)
-[2026-10-11 14:02:38] [INFO] conn 1 RECV "CLAIM_ITEM Party1 Chips"
-[2026-10-11 14:02:38] [INFO] conn 1 SEND 200 OK
-[2026-10-11 14:02:38] [INFO] conn 1 NOTIFY 210 Party1 ITEM_CLAIMED Chips claimed by Andrew
-[2026-10-11 14:02:41] [INFO] conn 1 RECV "RSVP Party1 Purple"
-[2026-10-11 14:02:41] [WARN] conn 1 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
-[2026-10-11 14:03:02] [INFO] conn 1 RECV "QUIT"
-[2026-10-11 14:03:02] [INFO] conn 1 disconnected (client sent QUIT); session removed with 1 identity
-[2026-10-11 14:03:02] [INFO] Waiting for a client...
+[2026-11-03 14:02:31] [INFO] session 1 connected from 127.0.0.1:54012; 1 session(s) connected
+[2026-11-03 14:02:33] [INFO] session 2 connected from 127.0.0.1:54013; 2 session(s) connected
+[2026-11-03 14:02:35] [INFO] session 1 CREATE_EVENT Party1 -> 201 Created Event (+1 line)
+[2026-11-03 14:02:37] [INFO] session 2 JOIN Party1 -> 200 OK (+1 line) [new guest]
+[2026-11-03 14:02:40] [INFO] session 2 CLAIM_ITEM Party1 -> 200 OK; notified 2 connections
+[2026-11-03 14:02:40] [WARN] session 1 CLAIM_ITEM Party1 -> 410 Conflict: item already claimed by Giovanna
+[2026-11-03 14:02:41] [WARN] session 2 rejected "RSVP Party1 Purple" -> 300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+[2026-11-03 14:03:02] [INFO] session 2 disconnected (client sent QUIT); removed from 1 event; 1 session(s) still connected
 ```
 
 ---
@@ -298,7 +295,7 @@ Command handlers never touch sockets. Each handler returns its **response lines*
 - a response is never interrupted by a notification, and
 - a client always gets the response to its own command before any notification that command caused.
 
-The same design carries over to Phase 3: adding more client sessions and a lock per event does not change the handlers.
+**Phase 3 concurrency.** Each connection has a reader thread (framing, parsing, applying commands) and a writer thread (sending that session's queued output). A command for an event runs entirely under that event's lock, so commands for one event are applied one at a time and commands for different events run in parallel. The response and notifications are queued *while the lock is held*, so every connection sees an event's changes in the order they were applied. Sockets are written only by writer threads, never under a lock, so a slow client can't delay anyone else. See the comments at the top of `server/AppState.hpp` and `server/Session.hpp`.
 
 ### Data model (from Phase 1 data design)
 
@@ -321,22 +318,31 @@ The same design carries over to Phase 3: adding more client sessions and a lock 
 | Text of the 300 response | **`300 Message Format Error`**, then `: <reason>` (Phase 3) | Phase 2 feedback: users couldn't tell what to fix, because the reason was only in the server log. Every error code now includes its reason on the same line. |
 | JOIN reply shows date/time | Second line: `<User>, you are now a guest of <Event> (<Date> <Time>).` | Closes requirement FR-05 (view event date and time). Needs a matching update in the protocol spec. |
 | Client oversized lines | Client will also enforce the 527-byte receive limit | Required by the spec's buffering rules for both sides. Scheduled for integration (Day 2). |
-| Concurrency | Level 1 (one client at a time) | Level 2 with per-event locking is planned for Phase 3. |
+| Concurrency (Phase 3) | Thread per connection (reader + writer), one lock per event | First come, first served per event; different events in parallel; 1000-line output limit per client. |
 
 ---
 
 ## 11. Testing
 
 ```bash
-make test                             # framing and state unit tests (no network needed)
+make test                             # unit tests: framing, state, and concurrency (no network)
+make tsan                             # the same tests under ThreadSanitizer (data-race detector)
 
-./bin/partyon-server &                # conformance tests over real TCP
-python3 tests/protocol_test.py        # optional: [host] [port]
+./bin/partyon-server &                # then, against the running server:
+python3 tests/protocol_test.py        # protocol conformance          (optional: [host] [port])
+python3 tests/concurrency_test.py     # multi-client races and failures (optional: [host] [port])
 ```
 
-`protocol_test.py` prints PASS or FAIL for each test ID (TC-F01 to F09, one per response code, and behavior checks). It works against any running server, including one on another machine.
+| Suite | What it checks |
+|---|---|
+| `test_framer`, `test_state` | Framing (TC-F01–F09), every command and response code, error reasons |
+| `test_concurrency` | 16 threads racing for one item, same-code creates, delete-vs-claim, per-connection notification order, connect/disconnect churn |
+| `protocol_test.py` | Every response code and framing case over real TCP |
+| `concurrency_test.py` | Spec v2 conflict table rows 1–15 and Phase 1 TC-C01–C06 with simultaneous clients, plus failure isolation and slow-client protection |
 
-**Automatic checks (GitHub Actions):** every push builds the project and runs the unit and conformance tests on **Linux and Windows** (`.github/workflows/build.yml`). See the repo's **Actions** tab, or the ✅/❌ next to a commit or PR. To start a run by hand, open Actions → *Build and test* → **Run workflow**.
+The Python scripts print PASS or FAIL for each test ID, and they work against any running server, including one on another machine.
+
+**Automatic checks (GitHub Actions):** every push builds the project and runs all of the above on **Linux and Windows**, plus a ThreadSanitizer job that checks the live server for data races (`.github/workflows/build.yml`). See the repo's **Actions** tab, or the ✅/❌ next to a commit or PR. To start a run by hand, open Actions → *Build and test* → **Run workflow**.
 
 Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`, and a sample server log is in `docs/server-log-sample.txt`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
 
@@ -358,7 +364,7 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 | Two machines: connection times out, nothing appears in the server log | Make sure **both** machines are connected to the VPN (the client must have a `141.215.x.x` address too), and add the macOS firewall rule from §6. |
 | `socketfilterfw`: "The file path you specified does not exist" | Run the command from the repository root, or give the full path to `bin/partyon-server`. |
 | `ifconfig \| grep utun` shows no address while on the VPN | Use the `awk` command in §6. It lists every interface with an IPv4 address. |
-| Client connects but nothing happens | Phase 2 serves one client at a time, so another client may still be connected. Quit that client first. |
+| Client connects but nothing happens | Check the server terminal for a `session N connected` line. If it's missing, the client reached a different machine or port. |
 | Every command returns `300` | Commands are case-sensitive and uppercase, with single spaces and no extra fields. |
 | `401 Not Identified` | `JOIN` or `CREATE_EVENT` the event on this connection first. Identities are lost when you reconnect. |
 
@@ -366,5 +372,5 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 
 ## 13. Roadmap
 
-- **Phase 2 (this submission):** single client, full command set, framing, validation, logging, clean disconnects.
-- **Phase 3:** multiple concurrent clients, per-event locks, notifications sent to every affected connection, race and resilience testing, and possibly saving events to a JSON file.
+- **Phase 2:** single client, full command set, framing, validation, logging, clean disconnects.
+- **Phase 3 (this submission):** multiple concurrent clients, per-event locks, notifications to every affected connection, error reasons on the wire, slow-client protection, race and resilience testing, and saving events to disk.
