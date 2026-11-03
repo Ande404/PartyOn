@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <set>
 #include <string>
 #include <thread>
 
@@ -176,8 +177,15 @@ void logCommand(const std::string& tag, const std::string& rawLine, bool oversiz
         entry += " [" + result.note + "]";
     }
     if (!result.notifications.empty()) {
-        const std::size_t count = result.notifications.size();
+        std::set<SessionId> recipients;
+        for (const Notification& notification : result.notifications) {
+            recipients.insert(notification.recipient);
+        }
+        const std::size_t count = recipients.size();
         entry += "; notified " + std::to_string(count) + (count == 1 ? " connection" : " connections");
+        if (result.notifications.size() > count) {
+            entry += " (" + std::to_string(result.notifications.size()) + " notifications)";
+        }
     }
 
     if (status == '3' || status == '4') {
