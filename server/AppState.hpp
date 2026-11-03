@@ -17,6 +17,8 @@
 //     sessionsMutex_ (JOIN / CREATE). Code never holds two event locks, and
 //     never takes an event lock while holding eventsMutex_ or sessionsMutex_,
 //     except CREATE locking a new event that no other thread can see yet.
+//   - With a store attached, every change is saved while the event lock is
+//     held and before the response is queued (spec v2, Persistence).
 //   - When a sink is set, a command's response and notifications are handed
 //     to it while the event lock is still held, so every connection receives
 //     an event's notifications in the order the changes were applied.
@@ -34,6 +36,8 @@
 #include "Protocol.hpp"
 
 using SessionId = int;
+
+class EventStore;
 
 struct Guest {
     std::string userName;
@@ -88,6 +92,12 @@ public:
     // are only returned, never delivered.
     void setSink(Sink sink);
 
+    // Saves every change through `store` (not owned). Set before serving.
+    void setStore(const EventStore* store);
+
+    // Adds an event loaded from disk at startup; false if the code is taken
+    bool restore(const Event& event);
+
     SessionId openSession();
 
     // Removes the session from every event it is identified in. Guest
@@ -131,6 +141,10 @@ private:
 
     void track(SessionId session, const std::string& eventCode);
 
+    // Saves the event, or deletes its file. Caller holds the event lock.
+    void persist(const Event& event) const;
+    void unpersist(const std::string& eventCode) const;
+
     mutable std::mutex eventsMutex_;
     std::map<std::string, std::shared_ptr<EventEntry>> events_;
 
@@ -139,4 +153,5 @@ private:
 
     std::atomic<SessionId> nextSessionId_{1};
     Sink sink_;
+    const EventStore* store_ = nullptr;
 };

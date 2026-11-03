@@ -21,10 +21,10 @@ BUILD_DIR := build
 
 # Everything in the server except main.cpp, so the unit tests can link against it
 SERVER_LIB_SRCS := server/LineFramer.cpp server/Protocol.cpp server/AppState.cpp \
-                   server/Dispatcher.cpp server/Logger.cpp server/Session.cpp
+                   server/Dispatcher.cpp server/Logger.cpp server/Session.cpp server/EventStore.cpp
 SERVER_LIB_OBJS := $(SERVER_LIB_SRCS:%.cpp=$(BUILD_DIR)/%.o)
 SERVER_MAIN_OBJ := $(BUILD_DIR)/server/main.o
-TEST_NAMES      := test_framer test_state test_concurrency
+TEST_NAMES      := test_framer test_state test_concurrency test_store
 TEST_OBJS       := $(TEST_NAMES:%=$(BUILD_DIR)/tests/%.o)
 
 SERVER := $(BIN_DIR)/partyon-server$(EXE)

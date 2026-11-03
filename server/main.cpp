@@ -1,6 +1,8 @@
 // PartyOn server, Phase 3: many clients at once (protocol spec v2).
 //
-// Usage: partyon-server [port]      (default port 5527)
+// Usage: partyon-server [port] [--data-dir DIR]
+//   port        TCP port to listen on (default 5527)
+//   --data-dir  where events are saved (default ./data)
 //
 // Threads: the main thread accepts connections. Each connection gets a reader
 // thread (framing, parsing, applying commands) and a writer thread (sending
@@ -25,6 +27,7 @@
 
 #include "AppState.hpp"
 #include "Dispatcher.hpp"
+#include "EventStore.hpp"
 #include "LineFramer.hpp"
 #include "Logger.hpp"
 #include "Protocol.hpp"
@@ -33,6 +36,7 @@
 namespace {
 
 const char* kLogPath = "server.log";
+const char* kDefaultDataDir = "data";
 
 // Lines a session may have queued before it is treated as a stalled client
 constexpr std::size_t kMaxQueuedLines = 1000;
@@ -66,17 +70,29 @@ void installSignalHandlers() {
 #endif
 }
 
-bool parsePort(int argc, char* argv[], std::uint16_t& port) {
-    port = protocol::kDefaultPort;
-    if (argc < 2) {
-        return true;
+struct Options {
+    std::uint16_t port = protocol::kDefaultPort;
+    std::string dataDir = kDefaultDataDir;
+};
+
+bool parseArgs(int argc, char* argv[], Options& options) {
+    bool havePort = false;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        if (arg == "--data-dir" && i + 1 < argc) {
+            options.dataDir = argv[++i];
+        } else if (!havePort && !arg.empty() && arg[0] != '-') {
+            char* end = nullptr;
+            const long value = std::strtol(arg.c_str(), &end, 10);
+            if (*end != '\0' || value < 1 || value > 65535) {
+                return false;
+            }
+            options.port = static_cast<std::uint16_t>(value);
+            havePort = true;
+        } else {
+            return false;
+        }
     }
-    char* end = nullptr;
-    const long value = std::strtol(argv[1], &end, 10);
-    if (*argv[1] == '\0' || *end != '\0' || value < 1 || value > 65535) {
-        return false;
-    }
-    port = static_cast<std::uint16_t>(value);
     return true;
 }
 
@@ -240,12 +256,14 @@ bool waitForConnection(net::SocketType listener) {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    std::uint16_t port;
-    if (!parsePort(argc, argv, port)) {
-        std::cerr << "Usage: " << argv[0] << " [port]   (1-65535, default " << protocol::kDefaultPort << ")"
-                  << std::endl;
+    Options options;
+    if (!parseArgs(argc, argv, options)) {
+        std::cerr << "Usage: " << argv[0] << " [port] [--data-dir DIR]\n"
+                  << "  port        1-65535, default " << protocol::kDefaultPort << "\n"
+                  << "  --data-dir  where events are saved, default ./" << kDefaultDataDir << std::endl;
         return 1;
     }
+    const std::uint16_t port = options.port;
 
     if (!logger::init(kLogPath)) {
         std::cerr << "Warning: could not open " << kLogPath << "; logging to the terminal only." << std::endl;
@@ -269,6 +287,26 @@ int main(int argc, char* argv[]) {
     auto* state = new AppState();
     auto* dispatcher = new Dispatcher(*state);
     auto* registry = new SessionRegistry();
+    auto* store = new EventStore(options.dataDir);
+
+    std::string storeError;
+    if (!store->open(storeError)) {
+        logger::error(storeError);
+        net::closeSocket(listener);
+        net::cleanup();
+        return 1;
+    }
+    std::vector<std::string> warnings;
+    std::size_t restored = 0;
+    for (const Event& event : store->loadAll(warnings)) {
+        restored += state->restore(event) ? 1 : 0;
+    }
+    for (const std::string& warning : warnings) {
+        logger::warn("data: " + warning);
+    }
+    logger::info("Loaded " + std::to_string(restored) + (restored == 1 ? " event" : " events") + " from " +
+                 store->directory().string());
+    state->setStore(store);
 
     state->setSink([registry](SessionId recipient, const std::string& block) {
         if (auto session = registry->find(recipient)) {

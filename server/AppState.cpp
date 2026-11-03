@@ -1,5 +1,8 @@
 #include "AppState.hpp"
 
+#include "EventStore.hpp"
+#include "Logger.hpp"
+
 using namespace protocol;
 
 namespace {
@@ -48,6 +51,32 @@ Result Result::error(const std::string& status, const std::string& reason) {
 
 void AppState::setSink(Sink sink) {
     sink_ = std::move(sink);
+}
+
+void AppState::setStore(const EventStore* store) {
+    store_ = store;
+}
+
+bool AppState::restore(const Event& event) {
+    auto entry = std::make_shared<EventEntry>();
+    entry->event = event;
+    std::lock_guard<std::mutex> lock(eventsMutex_);
+    return events_.emplace(event.eventCode, entry).second;
+}
+
+void AppState::persist(const Event& event) const {
+    std::string error;
+    if (store_ != nullptr && !store_->save(event, error)) {
+        // The change stays in memory; see Known limitations in the README
+        logger::error("could not save event " + event.eventCode + ": " + error);
+    }
+}
+
+void AppState::unpersist(const std::string& eventCode) const {
+    std::string error;
+    if (store_ != nullptr && !store_->remove(eventCode, error)) {
+        logger::error(error);
+    }
 }
 
 SessionId AppState::openSession() {
@@ -154,6 +183,7 @@ Result AppState::createEvent(SessionId session, const std::string& eventCode, co
         }
         events_.emplace(eventCode, entry);
     }
+    persist(entry->event);
     track(session, eventCode);
 
     Result result;
@@ -182,6 +212,7 @@ Result AppState::join(SessionId session, const std::string& eventCode, const std
     const bool rejoin = event.findGuest(userName) != nullptr;
     if (!rejoin) {
         event.guests.push_back(Guest{userName, Rsvp::Maybe, false});
+        persist(event);
     }
     entry->connections[session] = userName;
     track(session, eventCode);
@@ -213,6 +244,10 @@ Result AppState::deleteEvent(SessionId session, const std::string& eventCode) {
 
     entry->deleted = true;
     entry->connections.clear();  // no connection keeps access, even if the code is reused
+
+    // Delete the file before freeing the code, so a CREATE that reuses the
+    // code cannot save its new file and then have it deleted here
+    unpersist(eventCode);
     {
         std::lock_guard<std::mutex> mapLock(eventsMutex_);
         auto it = events_.find(eventCode);
@@ -241,6 +276,7 @@ Result AppState::rsvp(SessionId session, const std::string& eventCode, Rsvp stat
         return publish(session, Result::error(response::kNotIdentified, kNotJoined));
     }
     guest->rsvpStatus = status;
+    persist(entry->event);
 
     Result result = Result::single(response::kOk);
     for (SessionId recipient : recipients(*entry, &entry->event.organizerName)) {
@@ -294,6 +330,7 @@ Result AppState::claimItem(SessionId session, const std::string& eventCode, cons
     } else {
         item->claimedBy = *userName;
     }
+    persist(entry->event);
 
     Result result = Result::single(response::kOk);
     for (SessionId recipient : recipients(*entry)) {
@@ -326,6 +363,7 @@ Result AppState::releaseItem(SessionId session, const std::string& eventCode, co
                        Result::error(response::kConflict, "only " + item->claimedBy + " can release that item"));
     }
     item->claimedBy.clear();
+    persist(entry->event);
 
     Result result = Result::single(response::kOk);
     for (SessionId recipient : recipients(*entry)) {
@@ -352,6 +390,7 @@ Result AppState::updateEvent(SessionId session, const std::string& eventCode, co
 
     entry->event.date = date;
     entry->event.time = time;
+    persist(entry->event);
 
     Result result = Result::single(response::kOk);
     for (SessionId recipient : recipients(*entry)) {
