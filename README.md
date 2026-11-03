@@ -59,12 +59,16 @@ PartyOn-Phase2/
 │   ├── UpdatedProtocolSpecification.md   # Phase 2 protocol (v1.0)
 │   ├── PartyOn_Client_Server_Architecture_Diagram (1).png
 │   ├── Sequence-Diagram.png
-│   ├── server-log-sample.txt             # Phase 2 server log
+│   ├── server-log-sample.txt             # Phase 2 server log (old format)
 │   ├── two-machine-log.txt               # Phase 2 server log: macOS server, Windows client over VPN
 │   ├── Project - Phase 1.pdf             # requirements, data design, test plan
 │   └── Project - Phase 2.pdf             # Phase 2 responsibilities
+├── logs/
+│   └── sample-server.log         # Phase 3 server log: 3 clients, conflict, cancellation, crash, restart
 └── data/                         # saved events (created at runtime, not in git)
 ```
+
+There is no `shared/` folder (the Phase 3 document lists it as optional). The client and server share only the protocol, which is defined in `docs/ProtocolSpecification-v2.md`; the client is a single self-contained file, so the two programs share no source code.
 
 > **Status (Phase 3):** multi-client server, error reasons, per-event locking, and saving to disk are done, and all unit, live, and ThreadSanitizer tests pass on macOS. CI runs them on Linux and Windows.
 
@@ -199,7 +203,7 @@ All fields are separated by a single space. Event codes, usernames and item name
 |---|---|---|
 | `CREATE_EVENT <EventCode> <UserName> <MM/DD/YYYY> <HH:MMAM\|PM>` | anyone | Creates an event. You become its organizer. |
 | `JOIN <EventCode> <UserName>` | anyone | Joins an existing event as a guest and shows its date and time. Joining again with the same name rejoins as that guest. |
-| `RSVP <EventCode> <Yes\|No\|Maybe>` | guests | Sets your attendance. New guests start as `Maybe`. |
+| `RSVP <EventCode> <Yes\|No\|Maybe>` | guests | Sets your attendance. New guests start as `Maybe`. **`No` also releases every item you claimed**, and everyone is notified. |
 | `ITEMLIST <EventCode>` | guests | Lists items and who has claimed them. |
 | `CLAIM_ITEM <EventCode> <ItemName>` | guests | Claims an item, creating it if it is new. |
 | `RELEASE_ITEM <EventCode> <ItemName>` | guests | Releases an item you claimed, so someone else can bring it. |
@@ -211,46 +215,99 @@ All fields are separated by a single space. Event codes, usernames and item name
 
 Commands must be **UPPERCASE**. A connection can belong to several events, with a different username in each.
 
-### Example session
+### Example interaction: three people, one party
+
+This comes from a real run with three `partyon-client` windows connected to one server (the matching server log is `logs/sample-server.log`). Andrew organizes a graduation party; Giovanna and LaNaysha are guests. Lines a person typed follow `PartyOn>`, and everything else is from the server. Blank lines are removed.
+
+**1. Andrew creates the party; the guests join**
 
 ```
-PartyOn> CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
-201 Created Event
-EventCode: Party1
-
-PartyOn> CLAIM_ITEM Party1 Chips
-200 OK
-[Notification] 210 Party1 ITEM_CLAIMED Chips claimed by Andrew
-
-PartyOn> RSVP Party1 Yes
-200 OK
-[Notification] 210 Party1 RSVP_UPDATED Andrew status is now Yes
-
-PartyOn> WHO Party1
-200 OK
-Andrew (organizer) - Yes
-END
-
-PartyOn> JOIN Party1 Andrew
-410 Conflict
-
-(from a new connection)
-PartyOn> JOIN Party1 Sam
-200 OK
-Sam, you are now a guest of Party1 (10/31/2026 07:00PM).
-
-PartyOn> ITEMLIST Party1
-200 OK
-Chips - claimed by Andrew
-END
-
-PartyOn> UPDATE_EVENT Party1 11/01/2026 06:30PM
-200 OK
-[Notification] 210 Party1 EVENT_UPDATED new event details: 11/01/2026 06:30PM
-
-PartyOn> QUIT
-Goodbye!
+Andrew>    CREATE_EVENT GradParty Andrew 12/12/2026 06:00PM
+           201 Created Event
+           EventCode: GradParty
+Giovanna>  JOIN GradParty Giovanna
+           200 OK
+           Giovanna, you are now a guest of GradParty (12/12/2026 06:00PM).
+LaNaysha>  JOIN GradParty LaNaysha
+           200 OK
+           LaNaysha, you are now a guest of GradParty (12/12/2026 06:00PM).
 ```
+
+**2. Giovanna and LaNaysha both claim the cake at the same moment.** The server applies one claim first. Everyone, including the loser and Andrew, is told who won.
+
+```
+Giovanna>  CLAIM_ITEM GradParty Cake
+           200 OK
+           [Notification] 210 GradParty ITEM_CLAIMED Cake claimed by Giovanna
+LaNaysha>  CLAIM_ITEM GradParty Cake
+           [Notification] 210 GradParty ITEM_CLAIMED Cake claimed by Giovanna
+           410 Conflict: item already claimed by Giovanna
+Andrew     [Notification] 210 GradParty ITEM_CLAIMED Cake claimed by Giovanna
+LaNaysha>  CLAIM_ITEM GradParty Chips
+           200 OK
+           [Notification] 210 GradParty ITEM_CLAIMED Chips claimed by LaNaysha
+Giovanna>  CLAIM_ITEM GradParty Punch
+           200 OK
+           [Notification] 210 GradParty ITEM_CLAIMED Punch claimed by Giovanna
+```
+
+**3. A typo gets an error that says how to fix it**
+
+```
+LaNaysha>  RSVP GradParty Purple
+           300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+```
+
+**4. The organizer moves the party; every guest is told**
+
+```
+Andrew>    UPDATE_EVENT GradParty 12/13/2026 07:00PM
+           200 OK
+           [Notification] 210 GradParty EVENT_UPDATED new event details: 12/13/2026 07:00PM
+Giovanna   [Notification] 210 GradParty EVENT_UPDATED new event details: 12/13/2026 07:00PM
+LaNaysha   [Notification] 210 GradParty EVENT_UPDATED new event details: 12/13/2026 07:00PM
+```
+
+**5. Last-minute cancellation (PartyOn's key feature).** Giovanna can't come anymore. Her RSVP of `No` releases everything she was bringing, and everyone sees at once what still needs covering, so Andrew grabs the punch.
+
+```
+Giovanna>  RSVP GradParty No
+           200 OK
+           [Notification] 210 GradParty ITEM_RELEASED Cake is available to bring again
+           [Notification] 210 GradParty ITEM_RELEASED Punch is available to bring again
+Andrew     [Notification] 210 GradParty RSVP_UPDATED Giovanna status is now No
+           [Notification] 210 GradParty ITEM_RELEASED Cake is available to bring again
+           [Notification] 210 GradParty ITEM_RELEASED Punch is available to bring again
+Andrew>    CLAIM_ITEM GradParty Punch
+           200 OK
+           [Notification] 210 GradParty ITEM_CLAIMED Punch claimed by Andrew
+Andrew>    WHO GradParty
+           200 OK
+           Andrew (organizer) - Maybe
+           Giovanna - No
+           LaNaysha - Maybe
+           END
+```
+
+**6. LaNaysha's laptop dies (no `QUIT`).** The others keep working, and her claims stay on the list.
+
+```
+Giovanna>  CLAIM_ITEM GradParty Balloons          (she can't stay, but will drop off balloons)
+           200 OK
+           [Notification] 210 GradParty ITEM_CLAIMED Balloons claimed by Giovanna
+Andrew     [Notification] 210 GradParty ITEM_CLAIMED Balloons claimed by Giovanna
+Andrew>    ITEMLIST GradParty
+           200 OK
+           Cake - unclaimed
+           Chips - claimed by LaNaysha
+           Punch - claimed by Andrew
+           Balloons - claimed by Giovanna
+           END
+Andrew>    QUIT
+           Goodbye!
+```
+
+If the server is restarted now, it logs `Loaded 1 event`, and anyone who `JOIN`s `GradParty` again finds the same guests, RSVPs, and items.
 
 ---
 
@@ -336,6 +393,7 @@ Command handlers never touch sockets. Each handler returns its **response lines*
 | Text of the 300 response | **`300 Message Format Error`**, then `: <reason>` (Phase 3) | Phase 2 feedback: users couldn't tell what to fix, because the reason was only in the server log. Every error code now includes its reason on the same line. |
 | JOIN reply shows date/time | Second line: `<User>, you are now a guest of <Event> (<Date> <Time>).` | Closes requirement FR-05 (view event date and time). Needs a matching update in the protocol spec. |
 | Client oversized lines | Client will also enforce the 527-byte receive limit | Required by the spec's buffering rules for both sides. Scheduled for integration (Day 2). |
+| Cancelling releases items (Phase 3) | `RSVP No` releases all of the guest's claimed items in the same step | PartyOn's distinctive feature from the Phase 1 proposal (§2g): when someone cancels, what they were bringing becomes available again, and everyone is told what still needs covering. |
 | Concurrency (Phase 3) | Thread per connection (reader + writer), one lock per event | First come, first served per event; different events in parallel; 1000-line output limit per client. |
 
 ---
