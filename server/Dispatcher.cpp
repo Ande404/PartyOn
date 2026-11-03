@@ -117,6 +117,17 @@ Result Dispatcher::handle(SessionId session, const std::string& line) {
         }
     }
 
+    Result result = route(session, fields);
+    result.command = command;
+    if (fields.size() > 1) {
+        result.eventCode = fields[1];
+    }
+    return result;
+}
+
+Result Dispatcher::route(SessionId session, const std::vector<std::string>& fields) {
+    const std::string& command = fields[0];
+
     if (command == "JOIN") {
         return state_.join(session, fields[1], fields[2]);
     }

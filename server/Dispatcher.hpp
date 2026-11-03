@@ -5,6 +5,7 @@
 // command to the matching AppState handler.
 
 #include <string>
+#include <vector>
 
 #include "AppState.hpp"
 
@@ -19,5 +20,8 @@ public:
     static Result oversizedLine();
 
 private:
+    // Calls the AppState handler for an already validated command
+    Result route(SessionId session, const std::vector<std::string>& fields);
+
     AppState& state_;
 };

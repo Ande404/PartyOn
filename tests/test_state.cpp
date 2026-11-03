@@ -266,7 +266,7 @@ void deleteEvent() {
     CHECK_EQ(result.lines, (Lines{"202 Deleted Event"}));
     CHECK_EQ(recipients(result), (std::vector<SessionId>{organizer, guest}));
     CHECK_EQ(result.notifications[0].line, std::string("210 Party1 EVENT_DELETED This event has been deleted"));
-    CHECK(h.state.findEvent("Party1") == nullptr);
+    CHECK(!h.state.snapshot("Party1").has_value());
 
     // Deleted event: 401 for everything except JOIN, which gets 404
     CHECK_EQ(h.lines(guest, "WHO Party1"), kNotIdentified);
