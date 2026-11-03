@@ -4,3 +4,5 @@ build/
 *.d
 server.log
 .DS_Store
+bin-tsan/
+build-tsan/

@@ -1,6 +1,11 @@
-// PartyOn server, Phase 2 (protocol conformance Level 1: one client at a time).
+// PartyOn server, Phase 3: many clients at once (protocol spec v2).
 //
 // Usage: partyon-server [port]      (default port 5527)
+//
+// Threads: the main thread accepts connections. Each connection gets a reader
+// thread (framing, parsing, applying commands) and a writer thread (sending
+// its queued output; see Session.hpp). Shared state lives in AppState, which
+// locks per event.
 
 // Winsock headers must come before anything that may include <windows.h>
 #include "net.hpp"
@@ -9,10 +14,13 @@
 #include <csignal>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <thread>
 
 #ifndef _WIN32
     #include <signal.h>
+    #include <sys/select.h>
 #endif
 
 #include "AppState.hpp"
@@ -20,20 +28,25 @@
 #include "LineFramer.hpp"
 #include "Logger.hpp"
 #include "Protocol.hpp"
+#include "Session.hpp"
 
 namespace {
 
 const char* kLogPath = "server.log";
 
+// Lines a session may have queued before it is treated as a stalled client
+constexpr std::size_t kMaxQueuedLines = 1000;
+
+// How often the accept loop checks for a shutdown request
+constexpr long kAcceptPollMicros = 500 * 1000;
+
+// How long shutdown waits for sessions to finish
+constexpr int kShutdownWaitMs = 5000;
+
 std::atomic<bool> g_stopRequested{false};
-net::SocketType g_listenSocket = net::INVALID_SOCKET_VALUE;
 
 void onStopSignal(int) {
     g_stopRequested = true;
-#ifdef _WIN32
-    // Signals do not interrupt accept() on Windows; closing the socket does
-    net::closeSocket(g_listenSocket);
-#endif
 }
 
 void installSignalHandlers() {
@@ -41,7 +54,6 @@ void installSignalHandlers() {
     std::signal(SIGINT, onStopSignal);
     std::signal(SIGTERM, onStopSignal);
 #else
-    // No SA_RESTART, so a blocked accept()/recv() returns EINTR on Ctrl+C
     struct sigaction action {};
     action.sa_handler = onStopSignal;
     sigemptyset(&action.sa_mask);
@@ -92,7 +104,7 @@ net::SocketType createListener(std::uint16_t port) {
         return net::INVALID_SOCKET_VALUE;
     }
 
-    if (listen(listener, 5) != 0) {
+    if (listen(listener, SOMAXCONN) != 0) {
         logger::error("listen() failed: " + net::lastErrorString());
         net::closeSocket(listener);
         return net::INVALID_SOCKET_VALUE;
@@ -107,111 +119,122 @@ std::string describePeer(const sockaddr_in& peer) {
     return std::string(host) + ":" + std::to_string(ntohs(peer.sin_port));
 }
 
-// Writes the response block in one piece, then this session's notifications,
-// so a notification never lands inside a response
-bool deliver(net::SocketType client, SessionId session, const std::string& tag, const Result& result) {
-    if (!result.lines.empty()) {
-        std::string block;
-        for (const std::string& line : result.lines) {
-            block += line + "\n";
-        }
+std::string joinLines(const std::vector<std::string>& lines) {
+    std::string block;
+    for (const std::string& line : lines) {
+        block += line + "\n";
+    }
+    return block;
+}
 
-        std::string entry = tag + " SEND " + result.lines.front();
+// One log line per command: session, command, event, result, fan-out count
+void logCommand(const std::string& tag, const std::string& rawLine, bool oversized, const Result& result) {
+    std::string entry = tag + " ";
+    if (!result.command.empty()) {
+        entry += result.command + (result.eventCode.empty() ? "" : " " + result.eventCode);
+    } else if (oversized) {
+        entry += "<line over " + std::to_string(protocol::kMaxLineBytes) + " bytes>";
+    } else {
+        entry += "rejected \"" + logger::escape(rawLine, !protocol::isValidUtf8(rawLine)) + "\"";
+    }
+
+    if (result.lines.empty()) {
+        entry += " -> no response";
+    } else {
+        entry += " -> " + result.lines.front();
         if (result.lines.size() > 1) {
             const std::size_t extra = result.lines.size() - 1;
             entry += " (+" + std::to_string(extra) + (extra == 1 ? " line)" : " lines)");
         }
-        if (!result.note.empty()) {
-            entry += " (" + result.note + ")";
-        }
-        const char status = result.lines.front()[0];
-        if (status == '3' || status == '4') {
-            logger::warn(entry);
-        } else {
-            logger::info(entry);
-        }
-
-        if (!net::sendAll(client, block)) {
-            return false;
-        }
     }
 
-    for (const Notification& notification : result.notifications) {
-        // Level 1: only this connection exists, so every recipient is this session
-        if (notification.recipient != session) {
-            logger::warn(tag + " no connection for session " + std::to_string(notification.recipient) +
-                         ", notification dropped: " + notification.line);
-            continue;
-        }
-        logger::info(tag + " NOTIFY " + notification.line);
-        if (!net::sendAll(client, notification.line + "\n")) {
-            return false;
-        }
+    // Error lines already carry their reason; success notes (e.g. "rejoined") do not
+    const char status = result.lines.empty() ? '2' : result.lines.front()[0];
+    if (!result.note.empty() && status != '3' && status != '4') {
+        entry += " [" + result.note + "]";
+    }
+    if (!result.notifications.empty()) {
+        const std::size_t count = result.notifications.size();
+        entry += "; notified " + std::to_string(count) + (count == 1 ? " connection" : " connections");
     }
 
-    return true;
+    if (status == '3' || status == '4') {
+        logger::warn(entry);
+    } else {
+        logger::info(entry);
+    }
 }
 
-void serveClient(net::SocketType client, const std::string& peer, AppState& state, Dispatcher& dispatcher) {
-    const SessionId session = state.openSession();
-    const std::string tag = "conn " + std::to_string(session);
-    logger::info("Client connected from " + peer + " (" + tag + ")");
+// Reader thread for one connection
+void serveClient(std::shared_ptr<Session> session, AppState& state, Dispatcher& dispatcher,
+                 SessionRegistry& registry) {
+    const SessionId id = session->id();
+    const std::string tag = "session " + std::to_string(id);
 
     LineFramer framer;
     char buffer[1024];
-    bool open = true;
-    std::string closeReason;
+    std::string reason;
 
-    while (open) {
-        const int received = static_cast<int>(recv(client, buffer, sizeof(buffer), 0));
+    while (reason.empty()) {
+        const int received = static_cast<int>(recv(session->socket(), buffer, sizeof(buffer), 0));
 
         if (received == 0) {
-            closeReason = "client closed the connection";
+            reason = "client closed the connection";
             break;
         }
         if (received < 0) {
-            if (g_stopRequested) {
-                closeReason = "server shutting down";
-                break;
+            if (session->isClosed()) {
+                break;  // closed elsewhere (shutdown, slow client); keep that reason
             }
             if (net::wasInterrupted()) {
                 continue;
             }
-            closeReason = "receive failed: " + net::lastErrorString();
+            reason = "receive failed: " + net::lastErrorString();
             break;
         }
 
         for (const LineFramer::Line& line : framer.feed(buffer, static_cast<std::size_t>(received))) {
-            Result result;
-            if (line.oversized) {
-                logger::warn(tag + " RECV <line over " + std::to_string(protocol::kMaxLineBytes) +
-                             " bytes, discarded>");
-                result = Dispatcher::oversizedLine();
-            } else {
-                logger::info(tag + " RECV \"" + logger::escape(line.text, !protocol::isValidUtf8(line.text)) + "\"");
-                result = dispatcher.handle(session, line.text);
-            }
+            Result result = line.oversized ? Dispatcher::oversizedLine() : dispatcher.handle(id, line.text);
+            logCommand(tag, line.text, line.oversized, result);
 
-            if (!deliver(client, session, tag, result)) {
-                closeReason = "send failed: " + net::lastErrorString();
-                open = false;
-                break;
+            // Results produced under an event lock were already queued by AppState
+            if (!result.delivered && !result.lines.empty()) {
+                session->enqueue(joinLines(result.lines));
             }
             if (result.closeConnection) {
-                closeReason = result.note;
-                open = false;
+                reason = result.note;
+                session->close(reason, /*flushPending=*/true);
+                break;
+            }
+            if (session->isClosed()) {
                 break;
             }
         }
     }
 
-    // Any partial line left in the framer is dropped with it
-    const std::size_t identities = state.closeSession(session);
-    logger::info(tag + " disconnected (" + closeReason + "); session removed with " + std::to_string(identities) +
-                 (identities == 1 ? " identity" : " identities"));
+    // A partial line left in the framer is dropped with it
+    session->close(reason.empty() ? "connection closed" : reason);
+    const std::string finalReason = session->closeReason();
+    const std::size_t identities = state.closeSession(id);
+    session->finish();
 
-    net::shutdownSocket(client);
-    net::closeSocket(client);
+    // Logged inside remove(): the count is exact, and shutdown cannot log
+    // "Server stopped" before this line
+    registry.remove(id, [&](std::size_t remaining) {
+        logger::info(tag + " disconnected (" + finalReason + "); removed from " + std::to_string(identities) +
+                     (identities == 1 ? " event" : " events") + "; " + std::to_string(remaining) +
+                     " session(s) still connected");
+    });
+}
+
+// Waits up to kAcceptPollMicros for a connection, so the stop flag is checked regularly
+bool waitForConnection(net::SocketType listener) {
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(listener, &readable);
+    timeval timeout{};
+    timeout.tv_usec = kAcceptPollMicros;
+    return select(static_cast<int>(listener + 1), &readable, nullptr, nullptr, &timeout) > 0;
 }
 
 }  // namespace
@@ -235,41 +258,59 @@ int main(int argc, char* argv[]) {
 
     installSignalHandlers();
 
-    g_listenSocket = createListener(port);
-    if (g_listenSocket == net::INVALID_SOCKET_VALUE) {
+    const net::SocketType listener = createListener(port);
+    if (listener == net::INVALID_SOCKET_VALUE) {
         net::cleanup();
         return 1;
     }
 
-    logger::info("PartyOn server listening on 0.0.0.0:" + std::to_string(port) + " (one client at a time)");
+    // Deliberately never freed: detached reader threads may still be using
+    // them if shutdown times out, and the process is exiting anyway
+    auto* state = new AppState();
+    auto* dispatcher = new Dispatcher(*state);
+    auto* registry = new SessionRegistry();
 
-    AppState state;
-    Dispatcher dispatcher(state);
+    state->setSink([registry](SessionId recipient, const std::string& block) {
+        if (auto session = registry->find(recipient)) {
+            session->enqueue(block);
+        }
+    });
+
+    logger::info("PartyOn server listening on 0.0.0.0:" + std::to_string(port) + " (multiple clients, " +
+                 std::to_string(kMaxQueuedLines) + "-line output limit per client)");
 
     while (!g_stopRequested) {
-        logger::info("Waiting for a client...");
+        if (!waitForConnection(listener)) {
+            continue;
+        }
 
         sockaddr_in peer{};
         net::SockLen peerLength = sizeof(peer);
-        const net::SocketType client = accept(g_listenSocket, reinterpret_cast<sockaddr*>(&peer), &peerLength);
-
+        const net::SocketType client = accept(listener, reinterpret_cast<sockaddr*>(&peer), &peerLength);
         if (client == net::INVALID_SOCKET_VALUE) {
-            if (g_stopRequested) {
-                break;
-            }
-            if (!net::wasInterrupted()) {
+            if (!net::wasInterrupted() && !g_stopRequested) {
                 logger::error("accept() failed: " + net::lastErrorString());
             }
             continue;
         }
 
-        serveClient(client, describePeer(peer), state, dispatcher);
+        const SessionId id = state->openSession();
+        auto session = std::make_shared<Session>(id, client, describePeer(peer), kMaxQueuedLines);
+        registry->add(session);
+        session->start();
+        logger::info("session " + std::to_string(id) + " connected from " + session->peer() + "; " +
+                     std::to_string(registry->size()) + " session(s) connected");
+
+        std::thread(serveClient, session, std::ref(*state), std::ref(*dispatcher), std::ref(*registry)).detach();
     }
 
-    logger::info("Shutting down");
-#ifndef _WIN32
-    net::closeSocket(g_listenSocket);
-#endif
+    logger::info("Shutting down: no new connections; closing " + std::to_string(registry->size()) + " session(s)");
+    net::closeSocket(listener);
+    registry->closeAll("server shutting down");
+    if (!registry->waitUntilEmpty(kShutdownWaitMs)) {
+        logger::warn("Some sessions did not finish within " + std::to_string(kShutdownWaitMs) + " ms");
+    }
+    logger::info("Server stopped");
     net::cleanup();
     return 0;
 }
