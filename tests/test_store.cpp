@@ -187,6 +187,44 @@ void appStateSavesChanges() {
     CHECK_EQ(dispatcher.handle(again, "JOIN Party1 Sam").note, std::string("rejoined as existing guest"));
 }
 
+// A cancellation (RSVP No) and the items it released are saved together
+void cancellationIsSaved() {
+    TempDir dir;
+    EventStore store(dir.path);
+    std::string error;
+    store.open(error);
+
+    AppState state;
+    state.setStore(&store);
+    Dispatcher dispatcher(state);
+    SessionId organizer = state.openSession();
+    SessionId guest = state.openSession();
+    dispatcher.handle(organizer, "CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM");
+    dispatcher.handle(guest, "JOIN Party1 Sam");
+    dispatcher.handle(guest, "CLAIM_ITEM Party1 Cake");
+    dispatcher.handle(guest, "CLAIM_ITEM Party1 Punch");
+    dispatcher.handle(organizer, "CLAIM_ITEM Party1 Chips");
+    dispatcher.handle(guest, "RSVP Party1 No");
+
+    std::vector<std::string> warnings;
+    std::vector<Event> loaded = store.loadAll(warnings);
+    CHECK_EQ(loaded.size(), 1u);
+    if (!loaded.empty()) {
+        CHECK(loaded[0].guests[1].rsvpStatus == protocol::Rsvp::No);
+        CHECK_EQ(loaded[0].items[0].claimedBy, std::string(""));        // Cake
+        CHECK_EQ(loaded[0].items[1].claimedBy, std::string(""));        // Punch
+        CHECK_EQ(loaded[0].items[2].claimedBy, std::string("Andrew"));  // Chips
+
+        // After a restart Sam is still "No", so the claim rule still applies
+        AppState restarted;
+        restarted.restore(loaded[0]);
+        Dispatcher again(restarted);
+        SessionId sam = restarted.openSession();
+        again.handle(sam, "JOIN Party1 Sam");
+        CHECK(startsWith(again.handle(sam, "CLAIM_ITEM Party1 Cake").lines[0], "410 Conflict: you RSVP'd No"));
+    }
+}
+
 // DELETE then CREATE with the same code keeps the new event's file
 void deleteThenRecreate() {
     TempDir dir;
@@ -221,6 +259,7 @@ int main() {
     saveLoadDelete();
     damagedFilesAreSkipped();
     appStateSavesChanges();
+    cancellationIsSaved();
     deleteThenRecreate();
     return testutil::report("test_store");
 }

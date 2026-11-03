@@ -455,6 +455,42 @@ def _():
         close_all(org, sam, kim)
 
 
+@test("TC-V03", "After RSVP No a guest cannot claim; Maybe allows it again; the organizer can still manage")
+def _():
+    code = ev("nomore")
+    org, (sam,) = party(code, ["Sam"])
+    try:
+        sam.cmd(f"RSVP {code} No")
+        check(sam.cmd(f"CLAIM_ITEM {code} Balloons")[0] ==
+              "410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items", "claim after No")
+        check(sam.cmd(f"RSVP {code} Maybe")[0] == "200 OK", "rsvp maybe")
+        check(sam.cmd(f"CLAIM_ITEM {code} Balloons")[0] == "200 OK", "claim after Maybe")
+        org.cmd(f"RSVP {code} No")
+        check(org.cmd(f"CLAIM_ITEM {code} Ice")[0].startswith("410 Conflict: you RSVP'd No"), "organizer claim")
+        check(org.cmd(f"UPDATE_EVENT {code} {NEW_DATE} {NEW_TIME}")[0] == "200 OK", "organizer update")
+    finally:
+        close_all(org, sam)
+
+
+@test("TC-V04", "A guest's own CLAIM racing their RSVP No: they end up holding nothing")
+def _():
+    code = ev("selfrace")
+    org, (sam,) = party(code, ["Sam"])
+    twin = Conn()  # a second connection as Sam, so both commands are in flight at once
+    try:
+        twin.cmd(f"JOIN {code} Sam", 2)
+        claim, rsvp = at_once(lambda: sam.cmd(f"CLAIM_ITEM {code} Cake"), lambda: twin.cmd(f"RSVP {code} No"))
+        check(rsvp[0] == "200 OK", f"rsvp: {rsvp}")
+        # Claim first: the cancellation then releases it. Cancellation first: the claim is refused.
+        check(claim[0] in ("200 OK", "410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items"),
+              f"claim: {claim}")
+        org.drain(0.2)
+        items = org.cmd(f"ITEMLIST {code}", 3 if claim[0] == "200 OK" else 2)
+        check("claimed by Sam" not in " ".join(items), f"Sam still holds an item: {items}")
+    finally:
+        close_all(org, sam, twin)
+
+
 # ---------------------------------------------------------- isolation
 
 @test("TC-I01", "Malformed input and abrupt disconnects do not affect other clients")

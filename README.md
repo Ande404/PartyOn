@@ -203,9 +203,9 @@ All fields are separated by a single space. Event codes, usernames and item name
 |---|---|---|
 | `CREATE_EVENT <EventCode> <UserName> <MM/DD/YYYY> <HH:MMAM\|PM>` | anyone | Creates an event. You become its organizer. |
 | `JOIN <EventCode> <UserName>` | anyone | Joins an existing event as a guest and shows its date and time. Joining again with the same name rejoins as that guest. |
-| `RSVP <EventCode> <Yes\|No\|Maybe>` | guests | Sets your attendance. New guests start as `Maybe`. **`No` also releases every item you claimed**, and everyone is notified. |
+| `RSVP <EventCode> <Yes\|No\|Maybe>` | guests | Sets your attendance. New guests start as `Maybe`. **`No` also releases every item you claimed**, and everyone is notified. While your RSVP is `No` you can't claim items; change it to `Yes` or `Maybe` first. |
 | `ITEMLIST <EventCode>` | guests | Lists items and who has claimed them. |
-| `CLAIM_ITEM <EventCode> <ItemName>` | guests | Claims an item, creating it if it is new. |
+| `CLAIM_ITEM <EventCode> <ItemName>` | guests | Claims an item, creating it if it is new. Not allowed while your RSVP is `No`. |
 | `RELEASE_ITEM <EventCode> <ItemName>` | guests | Releases an item you claimed, so someone else can bring it. |
 | `WHO <EventCode>` | guests | Lists guests and their RSVP status. |
 | `UPDATE_EVENT <EventCode> <MM/DD/YYYY> <HH:MMAM\|PM>` | organizer only | Changes the event date and time. |
@@ -289,13 +289,18 @@ Andrew>    WHO GradParty
            END
 ```
 
-**6. LaNaysha's laptop dies (no `QUIT`).** The others keep working, and her claims stay on the list.
+**6. LaNaysha's laptop dies (no `QUIT`).** The others keep working, and her claims stay on the list. Giovanna still wants to drop off balloons, but `No` means "not coming and not bringing anything", so she first changes her RSVP to `Maybe`.
 
 ```
-Giovanna>  CLAIM_ITEM GradParty Balloons          (she can't stay, but will drop off balloons)
+Giovanna>  CLAIM_ITEM GradParty Balloons
+           410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items
+Giovanna>  RSVP GradParty Maybe
+           200 OK
+Giovanna>  CLAIM_ITEM GradParty Balloons
            200 OK
            [Notification] 210 GradParty ITEM_CLAIMED Balloons claimed by Giovanna
-Andrew     [Notification] 210 GradParty ITEM_CLAIMED Balloons claimed by Giovanna
+Andrew     [Notification] 210 GradParty RSVP_UPDATED Giovanna status is now Maybe
+           [Notification] 210 GradParty ITEM_CLAIMED Balloons claimed by Giovanna
 Andrew>    ITEMLIST GradParty
            200 OK
            Cake - unclaimed
@@ -393,7 +398,7 @@ Command handlers never touch sockets. Each handler returns its **response lines*
 | Text of the 300 response | **`300 Message Format Error`**, then `: <reason>` (Phase 3) | Phase 2 feedback: users couldn't tell what to fix, because the reason was only in the server log. Every error code now includes its reason on the same line. |
 | JOIN reply shows date/time | Second line: `<User>, you are now a guest of <Event> (<Date> <Time>).` | Closes requirement FR-05 (view event date and time). Needs a matching update in the protocol spec. |
 | Client oversized lines | Client will also enforce the 527-byte receive limit | Required by the spec's buffering rules for both sides. Scheduled for integration (Day 2). |
-| Cancelling releases items (Phase 3) | `RSVP No` releases all of the guest's claimed items in the same step | PartyOn's distinctive feature from the Phase 1 proposal (§2g): when someone cancels, what they were bringing becomes available again, and everyone is told what still needs covering. |
+| Cancelling releases items (Phase 3) | `RSVP No` releases all of the guest's claimed items in the same step, and blocks new claims until the RSVP changes to `Yes` or `Maybe`. The organizer follows the same rule but can still update and delete the event. `RELEASE_ITEM` is always allowed | PartyOn's distinctive feature from the Phase 1 proposal (§2g): when someone cancels, what they were bringing becomes available again, and everyone is told what still needs covering. |
 | Concurrency (Phase 3) | Thread per connection (reader + writer), one lock per event | First come, first served per event; different events in parallel; 1000-line output limit per client. |
 
 ---

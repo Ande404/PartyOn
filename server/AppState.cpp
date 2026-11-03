@@ -342,6 +342,14 @@ Result AppState::claimItem(SessionId session, const std::string& eventCode, cons
         return publish(session, Result::error(response::kNotIdentified, kNotJoined));
     }
 
+    // "No" means not attending and not bringing anything (RSVP No released
+    // the guest's items). Someone who still brings things RSVPs Maybe or Yes.
+    const Guest* guest = entry->event.findGuest(*userName);
+    if (guest != nullptr && guest->rsvpStatus == Rsvp::No) {
+        return publish(session, Result::error(response::kConflict,
+                                              "you RSVP'd No; change your RSVP to Yes or Maybe to claim items"));
+    }
+
     Item* item = entry->event.findItem(itemName);
     if (item != nullptr && !item->claimedBy.empty()) {
         return publish(session, Result::error(response::kConflict, "item already claimed by " + item->claimedBy));

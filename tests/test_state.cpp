@@ -344,6 +344,55 @@ void rsvpNoReleasesItems() {
              (Lines{"200 OK", "Andrew (organizer) - No", "Sam - No", "Kim - Maybe", "END"}));
 }
 
+// "No" means fully out: no new claims until the guest changes their RSVP
+void rsvpNoBlocksClaims() {
+    Harness h;
+    SessionId organizer = h.state.openSession();
+    SessionId sam = h.state.openSession();
+    SessionId kim = h.state.openSession();
+    h.send(organizer, "CREATE_EVENT Party1 Andrew 09/22/2026 03:00PM");
+    h.send(sam, "JOIN Party1 Sam");
+    h.send(kim, "JOIN Party1 Kim");
+    h.send(sam, "CLAIM_ITEM Party1 Chips");
+    h.send(kim, "CLAIM_ITEM Party1 Soda");
+
+    // Yes keeps items, like Maybe
+    CHECK_EQ(h.send(sam, "RSVP Party1 Yes").notifications.size(), 1u);
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"),
+             (Lines{"200 OK", "Chips - claimed by Sam", "Soda - claimed by Kim", "END"}));
+
+    h.send(sam, "RSVP Party1 No");
+    const std::string blocked = "410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items";
+    CHECK_EQ(h.wire(sam, "CLAIM_ITEM Party1 Chips"), blocked);  // the item Sam just gave up
+    CHECK_EQ(h.wire(sam, "CLAIM_ITEM Party1 Cake"), blocked);   // a brand-new item
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"), (Lines{"200 OK", "Chips - unclaimed", "Soda - claimed by Kim", "END"}));
+
+    // RELEASE_ITEM is still allowed; it just gets its usual answers
+    CHECK_EQ(h.wire(sam, "RELEASE_ITEM Party1 Chips"), std::string("410 Conflict: that item is not claimed"));
+    CHECK_EQ(h.wire(sam, "RELEASE_ITEM Party1 Soda"), std::string("410 Conflict: only Kim can release that item"));
+
+    // Changing to Maybe allows claims again, but released items are not given back
+    h.send(sam, "RSVP Party1 Maybe");
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"), (Lines{"200 OK", "Chips - unclaimed", "Soda - claimed by Kim", "END"}));
+    CHECK_EQ(h.lines(sam, "CLAIM_ITEM Party1 Balloons"), kOk);
+
+    // Claims and RSVPs belong to the username: a second connection as Sam
+    // cancelling releases items claimed from the first, and blocks both
+    SessionId samAgain = h.state.openSession();
+    h.send(samAgain, "JOIN Party1 Sam");
+    h.send(samAgain, "RSVP Party1 No");
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"),
+             (Lines{"200 OK", "Chips - unclaimed", "Soda - claimed by Kim", "Balloons - unclaimed", "END"}));
+    CHECK_EQ(h.wire(sam, "CLAIM_ITEM Party1 Balloons"), blocked);
+
+    // The organizer follows the same rule but can still manage the event
+    h.send(organizer, "CLAIM_ITEM Party1 Ice");
+    CHECK_EQ(h.send(organizer, "RSVP Party1 No").note, std::string("released 1 item"));
+    CHECK_EQ(h.wire(organizer, "CLAIM_ITEM Party1 Ice"), blocked);
+    CHECK_EQ(h.lines(organizer, "UPDATE_EVENT Party1 10/01/2026 01:00PM"), kOk);
+    CHECK_EQ(h.lines(organizer, "DELETE_EVENT Party1"), (Lines{"202 Deleted Event"}));
+}
+
 void stateErrorReasons() {
     Harness h;
     SessionId organizer = h.state.openSession();
@@ -391,6 +440,7 @@ int main() {
     deleteEvent();
     multipleEventsPerConnection();
     rsvpNoReleasesItems();
+    rsvpNoBlocksClaims();
     stateErrorReasons();
     quit();
     return testutil::report("test_state");
