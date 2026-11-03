@@ -55,6 +55,10 @@ struct Result {
     std::string note;                          // reason, for the server log only
 
     static Result single(const std::string& line, const std::string& note = "");
+
+    // One-line error sent as "<code> <phrase>: <reason>" so the user can see
+    // what to fix; the reason is also kept as the log note
+    static Result error(const std::string& status, const std::string& reason);
 };
 
 class AppState {

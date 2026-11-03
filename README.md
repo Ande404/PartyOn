@@ -253,6 +253,17 @@ Goodbye!
 | `404 Not Found` | No such event | Only returned by `JOIN` |
 | `410 Conflict` | State conflict | Event code taken, item already claimed, already joined this event |
 
+**Every error line says what went wrong.** Errors are still a single line that starts with the code and phrase, followed by `: ` and a plain-language reason:
+
+```
+300 Message Format Error: invalid date in field 3 (expected a real date as MM/DD/YYYY)
+300 Message Format Error: wrong number of fields (got 1), usage: CLAIM_ITEM <EventCode> <ItemName>
+401 Not Identified: this connection has not joined that event
+410 Conflict: item already claimed by Andrew
+```
+
+Programs should look only at the 3-digit code. The reason is for people and may change.
+
 When several errors apply, the server reports the first one in this order: **300 → 401 → 402 → 410** (`JOIN`: 300 → 404 → 410; `CREATE_EVENT`: 300 → 410).
 
 Notification types: `ITEM_CLAIMED`, `ITEM_RELEASED`, `RSVP_UPDATED` (sent to the organizer), `EVENT_UPDATED`, `EVENT_DELETED`.
@@ -307,7 +318,7 @@ The same design carries over to Phase 3: adding more client sessions and a lock 
 | Command on a deleted event | **`401 Not Identified`** | Supersedes the Phase 1 data-design note that said `404`. Only `JOIN` returns `404`. |
 | Empty line | **`300 Message Format Error`** | Supersedes Phase 1 test case TC-F07 ("ignored"). |
 | Same username joins again | **Rejoin**, keeping their RSVP status | Supersedes FR-20 ("reject duplicate usernames"). There is no authentication. |
-| Text of the 300 response | Always **`300 Message Format Error`** | The mock server's `300 Invalid Command` will be updated to match during integration. |
+| Text of the 300 response | **`300 Message Format Error`**, then `: <reason>` (Phase 3) | Phase 2 feedback: users couldn't tell what to fix, because the reason was only in the server log. Every error code now includes its reason on the same line. |
 | JOIN reply shows date/time | Second line: `<User>, you are now a guest of <Event> (<Date> <Time>).` | Closes requirement FR-05 (view event date and time). Needs a matching update in the protocol spec. |
 | Client oversized lines | Client will also enforce the 527-byte receive limit | Required by the spec's buffering rules for both sides. Scheduled for integration (Day 2). |
 | Concurrency | Level 1 (one client at a time) | Level 2 with per-event locking is planned for Phase 3. |

@@ -27,6 +27,14 @@ Result Result::single(const std::string& line, const std::string& note) {
     return result;
 }
 
+Result Result::error(const std::string& status, const std::string& reason) {
+    return single(status + ": " + reason, reason);
+}
+
+namespace {
+const char* kNotJoined = "this connection has not joined that event";
+}  // namespace
+
 SessionId AppState::openSession() {
     const SessionId id = nextSessionId_++;
     sessions_[id].connectionId = id;
@@ -88,7 +96,7 @@ const Event* AppState::findEvent(const std::string& eventCode) const {
 Result AppState::createEvent(SessionId session, const std::string& eventCode, const std::string& userName,
                              const std::string& date, const std::string& time) {
     if (events_.count(eventCode) != 0) {
-        return Result::single(response::kConflict, "event code already in use");
+        return Result::error(response::kConflict, "event code already in use");
     }
 
     Event event;
@@ -109,12 +117,12 @@ Result AppState::createEvent(SessionId session, const std::string& eventCode, co
 Result AppState::join(SessionId session, const std::string& eventCode, const std::string& userName) {
     auto eventIt = events_.find(eventCode);
     if (eventIt == events_.end()) {
-        return Result::single(response::kNotFound, "no such event");
+        return Result::error(response::kNotFound, "no event with that code");
     }
 
     ClientSession& client = sessionFor(session);
     if (client.identities.count(eventCode) != 0) {
-        return Result::single(response::kConflict, "connection already identified in this event");
+        return Result::error(response::kConflict, "you have already joined this event on this connection");
     }
 
     // An existing guest name is a rejoin: the guest keeps their RSVP status
@@ -136,10 +144,10 @@ Result AppState::deleteEvent(SessionId session, const std::string& eventCode) {
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
     if (userName != event->organizerName) {
-        return Result::single(response::kNotAuthorized, "only the organizer can delete the event");
+        return Result::error(response::kNotAuthorized, "only the organizer can delete the event");
     }
 
     // Recipients are everyone identified in the event before it disappears
@@ -161,13 +169,13 @@ Result AppState::rsvp(SessionId session, const std::string& eventCode, Rsvp stat
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
 
     Guest* guest = event->findGuest(userName);
     if (guest == nullptr) {
         // Identities always refer to a guest; guard anyway rather than crash
-        return Result::single(response::kNotIdentified, "identity has no guest record");
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
     guest->rsvpStatus = status;
 
@@ -182,7 +190,7 @@ Result AppState::itemList(SessionId session, const std::string& eventCode) {
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
 
     Result result = Result::single(response::kOk);
@@ -201,12 +209,12 @@ Result AppState::claimItem(SessionId session, const std::string& eventCode, cons
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
 
     Item* item = event->findItem(itemName);
     if (item != nullptr && !item->claimedBy.empty()) {
-        return Result::single(response::kConflict, "item already claimed by " + item->claimedBy);
+        return Result::error(response::kConflict, "item already claimed by " + item->claimedBy);
     }
 
     if (item == nullptr) {
@@ -226,18 +234,18 @@ Result AppState::releaseItem(SessionId session, const std::string& eventCode, co
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
 
     Item* item = event->findItem(itemName);
     if (item == nullptr) {
-        return Result::single(response::kConflict, "item is not on the list");
+        return Result::error(response::kConflict, "that item is not on the list");
     }
     if (item->claimedBy.empty()) {
-        return Result::single(response::kConflict, "item is not claimed");
+        return Result::error(response::kConflict, "that item is not claimed");
     }
     if (item->claimedBy != userName) {
-        return Result::single(response::kConflict, "item is claimed by " + item->claimedBy);
+        return Result::error(response::kConflict, "only " + item->claimedBy + " can release that item");
     }
     item->claimedBy.clear();
 
@@ -253,10 +261,10 @@ Result AppState::updateEvent(SessionId session, const std::string& eventCode, co
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
     if (userName != event->organizerName) {
-        return Result::single(response::kNotAuthorized, "only the organizer can update the event");
+        return Result::error(response::kNotAuthorized, "only the organizer can update the event");
     }
 
     event->date = date;
@@ -273,7 +281,7 @@ Result AppState::who(SessionId session, const std::string& eventCode) {
     std::string userName;
     Event* event = identifiedEvent(session, eventCode, userName);
     if (event == nullptr) {
-        return Result::single(response::kNotIdentified);
+        return Result::error(response::kNotIdentified, kNotJoined);
     }
 
     Result result = Result::single(response::kOk);

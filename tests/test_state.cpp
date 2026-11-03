@@ -20,8 +20,26 @@ struct Harness {
         return dispatcher.handle(session, line);
     }
 
+    // Response lines with any ": reason" removed from an error line, so the
+    // checks below compare status codes; reasons are checked separately
     Lines lines(SessionId session, const std::string& line) {
-        return send(session, line).lines;
+        return withoutReason(send(session, line).lines);
+    }
+
+    // The single error line exactly as sent on the wire
+    std::string wire(SessionId session, const std::string& line) {
+        Lines sent = send(session, line).lines;
+        return sent.size() == 1 ? sent[0] : "<" + std::to_string(sent.size()) + " lines>";
+    }
+
+    static Lines withoutReason(Lines sent) {
+        if (sent.size() == 1 && !sent[0].empty() && (sent[0][0] == '3' || sent[0][0] == '4')) {
+            const std::size_t colon = sent[0].find(": ");
+            if (colon != std::string::npos) {
+                sent[0].erase(colon);
+            }
+        }
+        return sent;
     }
 };
 
@@ -57,7 +75,8 @@ void formatErrors() {
     CHECK_EQ(h.lines(s, "JOIN Party1 Bad\xFF"), kFormatError);           // invalid UTF-8
     CHECK_EQ(h.lines(s, "JOIN Party1 " + std::string(101, 'u')), kFormatError);
     CHECK_EQ(h.lines(s, "QUIT now"), kFormatError);
-    CHECK_EQ(Dispatcher::oversizedLine().lines, kFormatError);
+    CHECK_EQ(Harness::withoutReason(Dispatcher::oversizedLine().lines), kFormatError);
+    CHECK_EQ(Dispatcher::oversizedLine().lines[0], std::string("300 Message Format Error: line longer than 527 bytes"));
 
     // Log notes explain why (the wire response is still just 300)
     const std::string extraSpace = "empty field (extra space?)";
@@ -66,8 +85,23 @@ void formatErrors() {
     CHECK_EQ(h.send(s, " WHO Party1").note, extraSpace);
     CHECK_EQ(h.send(s, "WHO Party1 ").note, extraSpace);
     CHECK_EQ(h.send(s, " ").note, extraSpace);
-    CHECK_EQ(h.send(s, "WHO Party1 extra").note, std::string("WHO takes 1 field(s), got 2"));
-    CHECK_EQ(h.send(s, "DANCE Party1").note, std::string("unknown command"));
+    CHECK_EQ(h.send(s, "WHO Party1 extra").note,
+             std::string("wrong number of fields (got 2), usage: WHO <EventCode>"));
+    CHECK(startsWith(h.send(s, "DANCE Party1").note, "unknown command"));
+
+    // The reason reaches the client on the same line as the code
+    CHECK_EQ(h.wire(s, "RSVP Party1 Purple"),
+             std::string("300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)"));
+    CHECK_EQ(h.wire(s, "CREATE_EVENT P U 02/30/2026 03:00PM"),
+             std::string("300 Message Format Error: invalid date in field 3 (expected a real date as MM/DD/YYYY)"));
+    CHECK_EQ(h.wire(s, "CREATE_EVENT P U 02/28/2026 3:00PM"),
+             std::string("300 Message Format Error: invalid time in field 4 (expected HH:MMAM or HH:MMPM)"));
+    CHECK_EQ(h.wire(s, "JOIN Party1 " + std::string(101, 'u')),
+             std::string("300 Message Format Error: invalid username in field 2 (1-100 bytes, no spaces)"));
+    CHECK_EQ(h.wire(s, "CLAIM_ITEM Party1"),
+             std::string("300 Message Format Error: wrong number of fields (got 1), usage: CLAIM_ITEM <EventCode> <ItemName>"));
+    CHECK_EQ(h.wire(s, "WHO  Party1"), std::string("300 Message Format Error: empty field (extra space?)"));
+    CHECK_EQ(h.wire(s, "JOIN Party1 Bad\xFF"), std::string("300 Message Format Error: message is not valid UTF-8"));
 
     // Bad dates and times
     CHECK_EQ(h.lines(s, "CREATE_EVENT P U 02/30/2026 03:00PM"), kFormatError);
@@ -258,6 +292,32 @@ void multipleEventsPerConnection() {
     CHECK_EQ(h.state.closeSession(s), 2u);
 }
 
+void stateErrorReasons() {
+    Harness h;
+    SessionId organizer = h.state.openSession();
+    SessionId guest = h.state.openSession();
+    h.send(organizer, "CREATE_EVENT Party1 Andrew 09/22/2026 03:00PM");
+    h.send(guest, "JOIN Party1 Sam");
+    h.send(organizer, "CLAIM_ITEM Party1 Chips");
+
+    CHECK_EQ(h.wire(guest, "WHO Other"), std::string("401 Not Identified: this connection has not joined that event"));
+    CHECK_EQ(h.wire(guest, "UPDATE_EVENT Party1 10/01/2026 01:00PM"),
+             std::string("402 Not Authorized: only the organizer can update the event"));
+    CHECK_EQ(h.wire(guest, "DELETE_EVENT Party1"),
+             std::string("402 Not Authorized: only the organizer can delete the event"));
+    CHECK_EQ(h.wire(guest, "JOIN Nope Sam"), std::string("404 Not Found: no event with that code"));
+    CHECK_EQ(h.wire(guest, "CREATE_EVENT Party1 Sam 09/22/2026 03:00PM"),
+             std::string("410 Conflict: event code already in use"));
+    CHECK_EQ(h.wire(guest, "JOIN Party1 Sam"),
+             std::string("410 Conflict: you have already joined this event on this connection"));
+    CHECK_EQ(h.wire(guest, "CLAIM_ITEM Party1 Chips"), std::string("410 Conflict: item already claimed by Andrew"));
+    CHECK_EQ(h.wire(guest, "RELEASE_ITEM Party1 Chips"),
+             std::string("410 Conflict: only Andrew can release that item"));
+    CHECK_EQ(h.wire(guest, "RELEASE_ITEM Party1 Soda"), std::string("410 Conflict: that item is not on the list"));
+    h.send(organizer, "RELEASE_ITEM Party1 Chips");
+    CHECK_EQ(h.wire(organizer, "RELEASE_ITEM Party1 Chips"), std::string("410 Conflict: that item is not claimed"));
+}
+
 void quit() {
     Harness h;
     SessionId s = h.state.openSession();
@@ -278,6 +338,7 @@ int main() {
     updateEvent();
     deleteEvent();
     multipleEventsPerConnection();
+    stateErrorReasons();
     quit();
     return testutil::report("test_state");
 }
