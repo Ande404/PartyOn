@@ -434,7 +434,7 @@ int main() {
     );
 
     while (running) {
-        cout << "PartyOn> ";
+        cout << "PartyOn> " << flush;
 
         if (!getline(cin, command)) {
             cout << endl;
