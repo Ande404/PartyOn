@@ -47,6 +47,12 @@ constexpr long kAcceptPollMicros = 500 * 1000;
 // How long shutdown waits for sessions to finish
 constexpr int kShutdownWaitMs = 5000;
 
+// Kernel send buffer per client. Without a cap, Linux grows it to several MB,
+// so a client that stops reading could absorb tens of thousands of lines
+// before the output-queue limit noticed. Capping it keeps the slow-client
+// limit (and the memory one stalled client can hold) the same on every OS.
+constexpr int kSocketSendBufferBytes = 64 * 1024;
+
 std::atomic<bool> g_stopRequested{false};
 
 void onStopSignal(int) {
@@ -331,6 +337,9 @@ int main(int argc, char* argv[]) {
             }
             continue;
         }
+
+        int sendBuffer = kSocketSendBufferBytes;
+        setsockopt(client, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const char*>(&sendBuffer), sizeof(sendBuffer));
 
         const SessionId id = state->openSession();
         auto session = std::make_shared<Session>(id, client, describePeer(peer), kMaxQueuedLines);

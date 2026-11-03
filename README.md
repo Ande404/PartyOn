@@ -123,7 +123,7 @@ On startup the server prints something like:
 - The server listens on all interfaces (`0.0.0.0`), so a client on another machine can connect using the server's IP address.
 - **Many clients at once.** Every connection is served immediately, with no fixed maximum. Each connection is a *session* with its own ID in the log.
 - When a client sends `QUIT`, drops, or sends bad input, only that session is affected. **The server and every other client keep running.**
-- A client that stops reading is disconnected once **1000 lines** are waiting for it, so it can't hold up notifications to anyone else.
+- A client that stops reading is disconnected once **1000 lines** are waiting for it, so it can't hold up notifications to anyone else. Each client's operating-system send buffer is capped at 64 KB so this limit works the same on Linux, macOS, and Windows.
 - To stop the server, press **Ctrl+C** (on Windows too). It stops accepting, closes every session, and exits. Clients see an ordinary disconnect.
 - **Events survive restarts and crashes.** Every change is saved to `--data-dir` before the server replies. Restart the server with the same folder and every party, guest, RSVP, and item is back. Connections are not saved, so users `JOIN` again after a restart. To start fresh, delete the folder.
 
