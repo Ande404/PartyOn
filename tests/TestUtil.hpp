@@ -33,6 +33,10 @@ inline int g_failures = 0;
         }                                                                                \
     } while (0)
 
+inline bool startsWith(const std::string& text, const std::string& prefix) {
+    return text.compare(0, prefix.size(), prefix) == 0;
+}
+
 namespace testutil {
 
 template <typename T>
