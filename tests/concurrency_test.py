@@ -412,6 +412,49 @@ def _():
         close_all(org, a, b)
 
 
+# ------------------------------------------- last-minute cancellation
+
+@test("TC-V01", "RSVP No releases the guest's items and every connection is told")
+def _():
+    code = ev("cancel")
+    org, (sam, kim) = party(code, ["Sam", "Kim"])
+    try:
+        sam.cmd(f"CLAIM_ITEM {code} Cake", 2)
+        sam.cmd(f"CLAIM_ITEM {code} Chips", 2)
+        kim.cmd(f"CLAIM_ITEM {code} Soda", 2)
+        for c in (org, sam, kim):
+            c.drain(0.2)
+        check(sam.cmd(f"RSVP {code} No")[0] == "200 OK", "rsvp")
+        released = [f"210 {code} ITEM_RELEASED Cake is available to bring again",
+                    f"210 {code} ITEM_RELEASED Chips is available to bring again"]
+        check(org.drain() == [f"210 {code} RSVP_UPDATED Sam status is now No"] + released, "organizer view")
+        check(kim.drain() == released, "other guest view")
+        check(kim.cmd(f"ITEMLIST {code}", 5)[1:] == ["Cake - unclaimed", "Chips - unclaimed",
+                                                     "Soda - claimed by Kim", "END"], "itemlist")
+    finally:
+        close_all(org, sam, kim)
+
+
+@test("TC-V02", "RSVP No races another guest claiming the same item: one consistent outcome")
+def _():
+    code = ev("cancelrace")
+    org, (sam, kim) = party(code, ["Sam", "Kim"])
+    try:
+        sam.cmd(f"CLAIM_ITEM {code} Cake", 2)
+        kim.drain(0.2)
+        rsvp, claim = at_once(lambda: sam.cmd(f"RSVP {code} No"), lambda: kim.cmd(f"CLAIM_ITEM {code} Cake"))
+        check(rsvp[0] == "200 OK", f"rsvp: {rsvp}")
+        kim.drain(0.2)
+        owner = kim.cmd(f"ITEMLIST {code}", 3)[1]
+        if claim[0] == "200 OK":           # cancellation applied first, Kim took the cake
+            check(owner == "Cake - claimed by Kim", owner)
+        else:                              # Kim's claim applied first and lost to Sam
+            check(claim[0] == "410 Conflict: item already claimed by Sam", f"claim: {claim}")
+            check(owner == "Cake - unclaimed", owner)
+    finally:
+        close_all(org, sam, kim)
+
+
 # ---------------------------------------------------------- isolation
 
 @test("TC-I01", "Malformed input and abrupt disconnects do not affect other clients")

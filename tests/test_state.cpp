@@ -292,6 +292,58 @@ void multipleEventsPerConnection() {
     CHECK_EQ(h.state.closeSession(s), 2u);
 }
 
+// A guest who RSVPs No gives back everything they claimed
+void rsvpNoReleasesItems() {
+    Harness h;
+    SessionId organizer = h.state.openSession();
+    SessionId sam = h.state.openSession();
+    SessionId kim = h.state.openSession();
+    h.send(organizer, "CREATE_EVENT Party1 Andrew 09/22/2026 03:00PM");
+    h.send(sam, "JOIN Party1 Sam");
+    h.send(kim, "JOIN Party1 Kim");
+    h.send(sam, "CLAIM_ITEM Party1 Chips");
+    h.send(sam, "CLAIM_ITEM Party1 Cake");
+    h.send(kim, "CLAIM_ITEM Party1 Soda");
+
+    // Yes and Maybe keep the items
+    CHECK_EQ(h.send(sam, "RSVP Party1 Maybe").notifications.size(), 1u);
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"),
+             (Lines{"200 OK", "Chips - claimed by Sam", "Cake - claimed by Sam", "Soda - claimed by Kim", "END"}));
+
+    Result result = h.send(sam, "RSVP Party1 No");
+    CHECK_EQ(result.lines, kOk);
+    CHECK_EQ(result.note, std::string("released 2 items"));
+
+    // Organizer gets RSVP_UPDATED first, then every connection gets one ITEM_RELEASED per item
+    std::vector<std::string> organizerSees;
+    std::vector<std::string> kimSees;
+    std::vector<std::string> samSees;
+    for (const Notification& n : result.notifications) {
+        (n.recipient == organizer ? organizerSees : n.recipient == kim ? kimSees : samSees).push_back(n.line);
+    }
+    CHECK_EQ(organizerSees, (Lines{"210 Party1 RSVP_UPDATED Sam status is now No",
+                                   "210 Party1 ITEM_RELEASED Chips is available to bring again",
+                                   "210 Party1 ITEM_RELEASED Cake is available to bring again"}));
+    CHECK_EQ(kimSees, (Lines{"210 Party1 ITEM_RELEASED Chips is available to bring again",
+                             "210 Party1 ITEM_RELEASED Cake is available to bring again"}));
+    CHECK_EQ(samSees, kimSees);
+
+    // Only Sam's items were released; someone else can take them now
+    CHECK_EQ(h.lines(kim, "ITEMLIST Party1"),
+             (Lines{"200 OK", "Chips - unclaimed", "Cake - unclaimed", "Soda - claimed by Kim", "END"}));
+    CHECK_EQ(h.lines(kim, "CLAIM_ITEM Party1 Cake"), kOk);
+
+    // Nothing left to release: just the RSVP notification
+    CHECK_EQ(h.send(sam, "RSVP Party1 No").notifications.size(), 1u);
+
+    // The organizer cancelling works the same way
+    h.send(organizer, "CLAIM_ITEM Party1 Ice");
+    Result organizerNo = h.send(organizer, "RSVP Party1 No");
+    CHECK_EQ(organizerNo.note, std::string("released 1 item"));
+    CHECK_EQ(h.lines(sam, "WHO Party1"),
+             (Lines{"200 OK", "Andrew (organizer) - No", "Sam - No", "Kim - Maybe", "END"}));
+}
+
 void stateErrorReasons() {
     Harness h;
     SessionId organizer = h.state.openSession();
@@ -338,6 +390,7 @@ int main() {
     updateEvent();
     deleteEvent();
     multipleEventsPerConnection();
+    rsvpNoReleasesItems();
     stateErrorReasons();
     quit();
     return testutil::report("test_state");

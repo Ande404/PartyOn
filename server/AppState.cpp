@@ -276,11 +276,33 @@ Result AppState::rsvp(SessionId session, const std::string& eventCode, Rsvp stat
         return publish(session, Result::error(response::kNotIdentified, kNotJoined));
     }
     guest->rsvpStatus = status;
+
+    // PartyOn's last-minute-change feature: a guest who can no longer come
+    // stops being responsible for their items, so they become available
+    // again in the same step and everyone sees what still needs covering
+    std::vector<std::string> released;
+    if (status == Rsvp::No) {
+        for (Item& item : entry->event.items) {
+            if (item.claimedBy == *userName) {
+                item.claimedBy.clear();
+                released.push_back(item.itemName);
+            }
+        }
+    }
     persist(entry->event);
 
     Result result = Result::single(response::kOk);
     for (SessionId recipient : recipients(*entry, &entry->event.organizerName)) {
         result.notifications.push_back({recipient, notify::rsvpUpdated(eventCode, *userName, status)});
+    }
+    const std::vector<SessionId> everyone = recipients(*entry);
+    for (const std::string& itemName : released) {
+        for (SessionId recipient : everyone) {
+            result.notifications.push_back({recipient, notify::itemReleased(eventCode, itemName)});
+        }
+    }
+    if (!released.empty()) {
+        result.note = "released " + std::to_string(released.size()) + (released.size() == 1 ? " item" : " items");
     }
     return publish(session, std::move(result));
 }
