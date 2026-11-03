@@ -29,35 +29,44 @@ Phase 3 serves **many clients at once** over TCP (protocol spec v2, `docs/Protoc
 
 ```
 PartyOn-Phase2/
-├── Makefile                      # builds the server and the client
+├── Makefile                      # builds the server, client, and tests
 ├── README.md                     # this file
 ├── client/
 │   └── client.cpp                # command-line client (Giovanna)
 ├── server/
-│   ├── main.cpp                  # startup, listen/accept loop, shutdown
-│   ├── net.hpp                   # socket code for Windows and POSIX, send-all helper
+│   ├── main.cpp                  # startup, accept loop, reader thread per client, shutdown
+│   ├── Session.hpp/.cpp          # one connection: output queue, writer thread, slow-client limit
+│   ├── AppState.hpp/.cpp         # events, guests, items; one lock per event
+│   ├── EventStore.hpp/.cpp       # saves each event to disk (one file per event)
+│   ├── Dispatcher.hpp/.cpp       # command → handler, validation, error reasons
 │   ├── LineFramer.hpp/.cpp       # TCP stream → complete protocol lines
-│   ├── Protocol.hpp/.cpp         # tokenizing, field/date/time/UTF-8 validation, response text
-│   ├── AppState.hpp/.cpp         # Event, Guest, Item, ClientSession data model
-│   ├── Dispatcher.hpp/.cpp       # command → handler, error-precedence rules
-│   └── Logger.hpp/.cpp           # timestamped server log
+│   ├── Protocol.hpp/.cpp         # constants, field/date/time/UTF-8 validation, message text
+│   ├── Logger.hpp/.cpp           # timestamped, thread-safe server log
+│   └── net.hpp                   # socket code for Windows and POSIX
 ├── tests/
+│   ├── test_framer.cpp           # unit: message framing
+│   ├── test_state.cpp            # unit: commands, response codes, error reasons
+│   ├── test_concurrency.cpp      # unit: many threads at once (also run under ThreadSanitizer)
+│   ├── test_store.cpp            # unit: saving and loading events
+│   ├── protocol_test.py          # live: protocol conformance
+│   ├── concurrency_test.py       # live: simultaneous clients, conflicts, failures
+│   ├── persistence_test.py       # live: crash/restart and Ctrl+C
+│   ├── load_test.py              # live: throughput and latency for 10-200 clients
 │   ├── mock_server.cpp           # fake server used while building the client
-│   ├── test_framer.cpp           # unit tests for message framing
-│   ├── test_state.cpp            # unit tests for commands and response codes
-│   ├── protocol_test.py          # conformance tests against a running server
 │   └── Phase2-TestReport.md      # Phase 2 test report
-└── docs/
-    ├── UpdatedProtocolSpecification.md   # authoritative protocol (PartyOn v1.0)
-    ├── PartyOn_Client_Server_Architecture_Diagram (1).png
-    ├── Sequence-Diagram.png
-    ├── server-log-sample.txt             # server log from three client sessions
-    ├── two-machine-log.txt               # server log: macOS server, Windows client over VPN
-    ├── Project - Phase 1.pdf             # requirements, data design, test plan
-    └── Project - Phase 2.pdf             # Phase 2 responsibilities
+├── docs/
+│   ├── ProtocolSpecification-v2.md       # authoritative protocol (PartyOn v2.0)
+│   ├── UpdatedProtocolSpecification.md   # Phase 2 protocol (v1.0)
+│   ├── PartyOn_Client_Server_Architecture_Diagram (1).png
+│   ├── Sequence-Diagram.png
+│   ├── server-log-sample.txt             # Phase 2 server log
+│   ├── two-machine-log.txt               # Phase 2 server log: macOS server, Windows client over VPN
+│   ├── Project - Phase 1.pdf             # requirements, data design, test plan
+│   └── Project - Phase 2.pdf             # Phase 2 responsibilities
+└── data/                         # saved events (created at runtime, not in git)
 ```
 
-> **Status:** server and client are merged and work together end to end. All unit and conformance tests pass on macOS. Still open: a Windows build check and a two-machine run (see `tests/Phase2-TestReport.md`).
+> **Status (Phase 3):** multi-client server, error reasons, per-event locking, and saving to disk are done, and all unit, live, and ThreadSanitizer tests pass on macOS. CI runs them on Linux and Windows.
 
 ---
 
@@ -92,9 +101,17 @@ make clean      # removes bin/ and object files
 ## 5. Running the server
 
 ```bash
-./bin/partyon-server            # listens on the default port 5527
-./bin/partyon-server 6000       # listens on a different port
+./bin/partyon-server                          # port 5527, events saved in ./data
+./bin/partyon-server 6000                     # a different port
+./bin/partyon-server 5527 --data-dir /tmp/po  # save events somewhere else
 ```
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `port` | `5527` | TCP port to listen on (1–65535) |
+| `--data-dir DIR` | `data` | Folder where events are saved, one file per event. Created if missing |
+
+The client takes no arguments; it asks for the server host and port when it starts.
 
 On startup the server prints something like:
 
@@ -108,6 +125,7 @@ On startup the server prints something like:
 - When a client sends `QUIT`, drops, or sends bad input, only that session is affected. **The server and every other client keep running.**
 - A client that stops reading is disconnected once **1000 lines** are waiting for it, so it can't hold up notifications to anyone else.
 - To stop the server, press **Ctrl+C** (on Windows too). It stops accepting, closes every session, and exits. Clients see an ordinary disconnect.
+- **Events survive restarts and crashes.** Every change is saved to `--data-dir` before the server replies. Restart the server with the same folder and every party, guest, RSVP, and item is back. Connections are not saved, so users `JOIN` again after a restart. To start fresh, delete the folder.
 
 ### Server log
 
@@ -337,8 +355,11 @@ python3 tests/concurrency_test.py     # multi-client races and failures (optiona
 |---|---|
 | `test_framer`, `test_state` | Framing (TC-F01–F09), every command and response code, error reasons |
 | `test_concurrency` | 16 threads racing for one item, same-code creates, delete-vs-claim, per-connection notification order, connect/disconnect churn |
+| `test_store` | Save/load round trip, damaged or half-written files skipped, every change saved, a losing `CREATE_EVENT` never overwrites the winner |
 | `protocol_test.py` | Every response code and framing case over real TCP |
 | `concurrency_test.py` | Spec v2 conflict table rows 1–15 and Phase 1 TC-C01–C06 with simultaneous clients, plus failure isolation and slow-client protection |
+| `persistence_test.py` | Starts its own server: crash (kill) and restart, Ctrl+C with clients connected, damaged event file. Run with `python3 tests/persistence_test.py` |
+| `load_test.py` | Throughput, latency, and broadcast time for 10–200 clients, in one shared event and in separate events. Run with `python3 tests/load_test.py --clients 10,50,100` |
 
 The Python scripts print PASS or FAIL for each test ID, and they work against any running server, including one on another machine.
 
@@ -355,7 +376,21 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 
 ---
 
-## 12. Troubleshooting
+## 12. Known limitations
+
+- **One thread pair per connection.** Each client uses two threads (reader and writer). This is simple and portable, but memory and scheduling cost grow with the number of clients. Our load test ran 200 simultaneous clients with no errors; thousands would need an event loop (`epoll`/`kqueue`/IOCP) instead.
+- **One busy event is the bottleneck.** Commands for a single event run one at a time, and every claim in that event notifies every connected guest. Throughput for one shared event falls from about 3,500 to about 640 commands/s between 10 and 200 clients, while separate events stay at 6,000–8,000 commands/s (see `load_test.py`).
+- **Failed disk writes are not reported to the user.** If saving an event fails (for example, the disk is full), the server logs an error and keeps the change in memory, but still replies with success. The protocol has no response code for "saved in memory only".
+- **No authentication.** Anyone who knows an event code can `JOIN` under any name, including the organizer's (spec: "a rejoin").
+- **Sessions are not saved.** After a server restart, every user must `JOIN` again. Events, guests, RSVPs, and items are restored.
+- **Plain TCP.** Traffic is not encrypted. Across the internet, use a VPN (we tested over the school VPN).
+- **Client prompt.** A notification can print after the next `PartyOn>` prompt (Phase 2 feedback; client fix in progress).
+
+## 13. Attribution
+
+PartyOn uses **no external libraries**: only the C++17 standard library, POSIX sockets / Winsock2 from the operating system, and the Python 3 standard library for the test scripts. The protocol, server, client, and tests were written by Group 4 for CIS 527. Some code and documentation were drafted with help from an AI assistant (Claude) and reviewed by the team.
+
+## 14. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -370,7 +405,7 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 
 ---
 
-## 13. Roadmap
+## 15. Roadmap
 
 - **Phase 2:** single client, full command set, framing, validation, logging, clean disconnects.
 - **Phase 3 (this submission):** multiple concurrent clients, per-event locks, notifications to every affected connection, error reasons on the wire, slow-client protection, race and resilience testing, and saving events to disk.
