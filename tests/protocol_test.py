@@ -100,7 +100,24 @@ def test(test_id, description):
     return wrap
 
 
+def bare(value):
+    """Drop the ": reason" part of error lines so checks compare status codes."""
+    if isinstance(value, str):
+        if len(value) > 4 and value[0] in "34" and value[1:3].isdigit() and ": " in value:
+            return value.split(": ", 1)[0]
+        return value
+    if isinstance(value, (list, tuple)):
+        return type(value)(bare(v) for v in value)
+    return value
+
+
 def check(actual, expected):
+    """Compare responses, ignoring error reasons (see check_exact)."""
+    if bare(actual) != expected:
+        raise AssertionError(f"expected {expected!r}, got {actual!r}")
+
+
+def check_exact(actual, expected):
     if actual != expected:
         raise AssertionError(f"expected {expected!r}, got {actual!r}")
 
@@ -258,6 +275,27 @@ def _():
             check((bad, c.cmd(bad)), (bad, ["300 Message Format Error"]))
         c.send(b"JOIN " + code.encode() + b" Bad\xff\n")
         check(c.line(), "300 Message Format Error")
+
+
+@test("RC-ERR", "Error lines carry a reason: \"<code> <phrase>: <reason>\"")
+def _():
+    with Conn() as c:
+        code = ev("ERR")
+        create(c, code)
+        check_exact(c.cmd(f"RSVP {code} Purple"),
+                    ["300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)"])
+        check_exact(c.cmd(f"UPDATE_EVENT {code} 02/30/2026 06:00PM"),
+                    ["300 Message Format Error: invalid date in field 2 (expected a real date as MM/DD/YYYY)"])
+        check_exact(c.cmd(f"CLAIM_ITEM {code}"),
+                    ["300 Message Format Error: wrong number of fields (got 1), "
+                     "usage: CLAIM_ITEM <EventCode> <ItemName>"])
+        check_exact(c.cmd(f"WHO {ev('none')}"),
+                    ["401 Not Identified: this connection has not joined that event"])
+        check_exact(c.cmd(f"JOIN {ev('none')} Sam"), ["404 Not Found: no event with that code"])
+        c.cmd(f"CLAIM_ITEM {code} Cake", 2)
+        check_exact(c.cmd(f"CLAIM_ITEM {code} Cake"), ["410 Conflict: item already claimed by Andrew"])
+        for line in c.cmd(f"RSVP {code} Purple") + c.cmd("DANCE"):
+            assert len(line.encode()) + 1 <= 527, "error line over the 527-byte limit"
 
 
 @test("RC-401", "RSVP before JOIN returns 401; 300 takes precedence")

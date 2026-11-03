@@ -21,7 +21,7 @@ PartyOn is a client–server application for organizing small events such as bir
 
 When something changes, the server pushes a **notification** to the affected users, so nobody works from stale information.
 
-Phase 2 delivers a working **one-client / one-server** version over TCP (*Level 1* in the protocol specification). Phase 3 will add concurrent clients.
+Phase 3 serves **many clients at once** over TCP (protocol spec v2, `docs/ProtocolSpecification-v2.md`). Shared event state is protected per event, conflicting operations are resolved first come, first served, and a failing or stalled client never affects the others.
 
 ---
 
@@ -29,35 +29,44 @@ Phase 2 delivers a working **one-client / one-server** version over TCP (*Level 
 
 ```
 PartyOn-Phase2/
-├── Makefile                      # builds the server and the client
+├── Makefile                      # builds the server, client, and tests
 ├── README.md                     # this file
 ├── client/
 │   └── client.cpp                # command-line client (Giovanna)
 ├── server/
-│   ├── main.cpp                  # startup, listen/accept loop, shutdown
-│   ├── net.hpp                   # socket code for Windows and POSIX, send-all helper
+│   ├── main.cpp                  # startup, accept loop, reader thread per client, shutdown
+│   ├── Session.hpp/.cpp          # one connection: output queue, writer thread, slow-client limit
+│   ├── AppState.hpp/.cpp         # events, guests, items; one lock per event
+│   ├── EventStore.hpp/.cpp       # saves each event to disk (one file per event)
+│   ├── Dispatcher.hpp/.cpp       # command → handler, validation, error reasons
 │   ├── LineFramer.hpp/.cpp       # TCP stream → complete protocol lines
-│   ├── Protocol.hpp/.cpp         # tokenizing, field/date/time/UTF-8 validation, response text
-│   ├── AppState.hpp/.cpp         # Event, Guest, Item, ClientSession data model
-│   ├── Dispatcher.hpp/.cpp       # command → handler, error-precedence rules
-│   └── Logger.hpp/.cpp           # timestamped server log
+│   ├── Protocol.hpp/.cpp         # constants, field/date/time/UTF-8 validation, message text
+│   ├── Logger.hpp/.cpp           # timestamped, thread-safe server log
+│   └── net.hpp                   # socket code for Windows and POSIX
 ├── tests/
+│   ├── test_framer.cpp           # unit: message framing
+│   ├── test_state.cpp            # unit: commands, response codes, error reasons
+│   ├── test_concurrency.cpp      # unit: many threads at once (also run under ThreadSanitizer)
+│   ├── test_store.cpp            # unit: saving and loading events
+│   ├── protocol_test.py          # live: protocol conformance
+│   ├── concurrency_test.py       # live: simultaneous clients, conflicts, failures
+│   ├── persistence_test.py       # live: crash/restart and Ctrl+C
+│   ├── load_test.py              # live: throughput and latency for 10-200 clients
 │   ├── mock_server.cpp           # fake server used while building the client
-│   ├── test_framer.cpp           # unit tests for message framing
-│   ├── test_state.cpp            # unit tests for commands and response codes
-│   ├── protocol_test.py          # conformance tests against a running server
 │   └── Phase2-TestReport.md      # Phase 2 test report
-└── docs/
-    ├── UpdatedProtocolSpecification.md   # authoritative protocol (PartyOn v1.0)
-    ├── PartyOn_Client_Server_Architecture_Diagram (1).png
-    ├── Sequence-Diagram.png
-    ├── server-log-sample.txt             # server log from three client sessions
-    ├── two-machine-log.txt               # server log: macOS server, Windows client over VPN
-    ├── Project - Phase 1.pdf             # requirements, data design, test plan
-    └── Project - Phase 2.pdf             # Phase 2 responsibilities
+├── docs/
+│   ├── ProtocolSpecification-v2.md       # authoritative protocol (PartyOn v2.0)
+│   ├── UpdatedProtocolSpecification.md   # Phase 2 protocol (v1.0)
+│   ├── PartyOn_Client_Server_Architecture_Diagram (1).png
+│   ├── Sequence-Diagram.png
+│   ├── server-log-sample.txt             # Phase 2 server log
+│   ├── two-machine-log.txt               # Phase 2 server log: macOS server, Windows client over VPN
+│   ├── Project - Phase 1.pdf             # requirements, data design, test plan
+│   └── Project - Phase 2.pdf             # Phase 2 responsibilities
+└── data/                         # saved events (created at runtime, not in git)
 ```
 
-> **Status:** server and client are merged and work together end to end. All unit and conformance tests pass on macOS. Still open: a Windows build check and a two-machine run (see `tests/Phase2-TestReport.md`).
+> **Status (Phase 3):** multi-client server, error reasons, per-event locking, and saving to disk are done, and all unit, live, and ThreadSanitizer tests pass on macOS. CI runs them on Linux and Windows.
 
 ---
 
@@ -92,39 +101,45 @@ make clean      # removes bin/ and object files
 ## 5. Running the server
 
 ```bash
-./bin/partyon-server            # listens on the default port 5527
-./bin/partyon-server 6000       # listens on a different port
+./bin/partyon-server                          # port 5527, events saved in ./data
+./bin/partyon-server 6000                     # a different port
+./bin/partyon-server 5527 --data-dir /tmp/po  # save events somewhere else
 ```
+
+| Argument | Default | Meaning |
+|---|---|---|
+| `port` | `5527` | TCP port to listen on (1–65535) |
+| `--data-dir DIR` | `data` | Folder where events are saved, one file per event. Created if missing |
+
+The client takes no arguments; it asks for the server host and port when it starts.
 
 On startup the server prints something like:
 
 ```
-[2026-10-11 14:02:10] [INFO] PartyOn server listening on 0.0.0.0:5527 (one client at a time)
-[2026-10-11 14:02:10] [INFO] Waiting for a client...
+[2026-11-03 14:02:10] [INFO] PartyOn server listening on 0.0.0.0:5527 (multiple clients, 1000-line output limit per client)
 ```
 
 - **Default port: `5527`.** The team moved off port 5000 because macOS uses it for the AirPlay Receiver, so the server often cannot bind there on a Mac.
 - The server listens on all interfaces (`0.0.0.0`), so a client on another machine can connect using the server's IP address.
-- **Phase 2 serves one client at a time.** Another client that connects while one is being served waits in the operating system's queue until the first one disconnects.
-- When a client sends `QUIT` or drops, the server cleans up that session and accepts the next client. **The server keeps running.**
-- To stop the server, press **Ctrl+C**. It closes its sockets and exits cleanly. The protocol has no shutdown command.
+- **Many clients at once.** Every connection is served immediately, with no fixed maximum. Each connection is a *session* with its own ID in the log.
+- When a client sends `QUIT`, drops, or sends bad input, only that session is affected. **The server and every other client keep running.**
+- A client that stops reading is disconnected once **1000 lines** are waiting for it, so it can't hold up notifications to anyone else. Each client's operating-system send buffer is capped at 64 KB so this limit works the same on Linux, macOS, and Windows.
+- To stop the server, press **Ctrl+C** (on Windows too). It stops accepting, closes every session, and exits. Clients see an ordinary disconnect.
+- **Events survive restarts and crashes.** Every change is saved to `--data-dir` before the server replies. Restart the server with the same folder and every party, guest, RSVP, and item is back. Connections are not saved, so users `JOIN` again after a restart. To start fresh, delete the folder.
 
 ### Server log
 
-Every connection, command, response code and disconnect goes both to the terminal and to `server.log` in the directory you started the server from:
+Every connection, applied command (with its result and how many connections were notified), and disconnect (with the reason) goes both to the terminal and to `server.log` in the directory you started the server from:
 
 ```
-[2026-10-11 14:02:31] [INFO] Client connected from 127.0.0.1:54012 (conn 1)
-[2026-10-11 14:02:35] [INFO] conn 1 RECV "CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM"
-[2026-10-11 14:02:35] [INFO] conn 1 SEND 201 Created Event (+1 line)
-[2026-10-11 14:02:38] [INFO] conn 1 RECV "CLAIM_ITEM Party1 Chips"
-[2026-10-11 14:02:38] [INFO] conn 1 SEND 200 OK
-[2026-10-11 14:02:38] [INFO] conn 1 NOTIFY 210 Party1 ITEM_CLAIMED Chips claimed by Andrew
-[2026-10-11 14:02:41] [INFO] conn 1 RECV "RSVP Party1 Purple"
-[2026-10-11 14:02:41] [WARN] conn 1 SEND 300 Message Format Error (invalid RSVP status (expected Yes, No, or Maybe) in position 2)
-[2026-10-11 14:03:02] [INFO] conn 1 RECV "QUIT"
-[2026-10-11 14:03:02] [INFO] conn 1 disconnected (client sent QUIT); session removed with 1 identity
-[2026-10-11 14:03:02] [INFO] Waiting for a client...
+[2026-11-03 14:02:31] [INFO] session 1 connected from 127.0.0.1:54012; 1 session(s) connected
+[2026-11-03 14:02:33] [INFO] session 2 connected from 127.0.0.1:54013; 2 session(s) connected
+[2026-11-03 14:02:35] [INFO] session 1 CREATE_EVENT Party1 -> 201 Created Event (+1 line)
+[2026-11-03 14:02:37] [INFO] session 2 JOIN Party1 -> 200 OK (+1 line) [new guest]
+[2026-11-03 14:02:40] [INFO] session 2 CLAIM_ITEM Party1 -> 200 OK; notified 2 connections
+[2026-11-03 14:02:40] [WARN] session 1 CLAIM_ITEM Party1 -> 410 Conflict: item already claimed by Giovanna
+[2026-11-03 14:02:41] [WARN] session 2 rejected "RSVP Party1 Purple" -> 300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+[2026-11-03 14:03:02] [INFO] session 2 disconnected (client sent QUIT); removed from 1 event; 1 session(s) still connected
 ```
 
 ---
@@ -253,6 +268,17 @@ Goodbye!
 | `404 Not Found` | No such event | Only returned by `JOIN` |
 | `410 Conflict` | State conflict | Event code taken, item already claimed, already joined this event |
 
+**Every error line says what went wrong.** Errors are still a single line that starts with the code and phrase, followed by `: ` and a plain-language reason:
+
+```
+300 Message Format Error: invalid date in field 3 (expected a real date as MM/DD/YYYY)
+300 Message Format Error: wrong number of fields (got 1), usage: CLAIM_ITEM <EventCode> <ItemName>
+401 Not Identified: this connection has not joined that event
+410 Conflict: item already claimed by Andrew
+```
+
+Programs should look only at the 3-digit code. The reason is for people and may change.
+
 When several errors apply, the server reports the first one in this order: **300 → 401 → 402 → 410** (`JOIN`: 300 → 404 → 410; `CREATE_EVENT`: 300 → 410).
 
 Notification types: `ITEM_CLAIMED`, `ITEM_RELEASED`, `RSVP_UPDATED` (sent to the organizer), `EVENT_UPDATED`, `EVENT_DELETED`.
@@ -287,7 +313,7 @@ Command handlers never touch sockets. Each handler returns its **response lines*
 - a response is never interrupted by a notification, and
 - a client always gets the response to its own command before any notification that command caused.
 
-The same design carries over to Phase 3: adding more client sessions and a lock per event does not change the handlers.
+**Phase 3 concurrency.** Each connection has a reader thread (framing, parsing, applying commands) and a writer thread (sending that session's queued output). A command for an event runs entirely under that event's lock, so commands for one event are applied one at a time and commands for different events run in parallel. The response and notifications are queued *while the lock is held*, so every connection sees an event's changes in the order they were applied. Sockets are written only by writer threads, never under a lock, so a slow client can't delay anyone else. See the comments at the top of `server/AppState.hpp` and `server/Session.hpp`.
 
 ### Data model (from Phase 1 data design)
 
@@ -307,25 +333,37 @@ The same design carries over to Phase 3: adding more client sessions and a lock 
 | Command on a deleted event | **`401 Not Identified`** | Supersedes the Phase 1 data-design note that said `404`. Only `JOIN` returns `404`. |
 | Empty line | **`300 Message Format Error`** | Supersedes Phase 1 test case TC-F07 ("ignored"). |
 | Same username joins again | **Rejoin**, keeping their RSVP status | Supersedes FR-20 ("reject duplicate usernames"). There is no authentication. |
-| Text of the 300 response | Always **`300 Message Format Error`** | The mock server's `300 Invalid Command` will be updated to match during integration. |
+| Text of the 300 response | **`300 Message Format Error`**, then `: <reason>` (Phase 3) | Phase 2 feedback: users couldn't tell what to fix, because the reason was only in the server log. Every error code now includes its reason on the same line. |
 | JOIN reply shows date/time | Second line: `<User>, you are now a guest of <Event> (<Date> <Time>).` | Closes requirement FR-05 (view event date and time). Needs a matching update in the protocol spec. |
 | Client oversized lines | Client will also enforce the 527-byte receive limit | Required by the spec's buffering rules for both sides. Scheduled for integration (Day 2). |
-| Concurrency | Level 1 (one client at a time) | Level 2 with per-event locking is planned for Phase 3. |
+| Concurrency (Phase 3) | Thread per connection (reader + writer), one lock per event | First come, first served per event; different events in parallel; 1000-line output limit per client. |
 
 ---
 
 ## 11. Testing
 
 ```bash
-make test                             # framing and state unit tests (no network needed)
+make test                             # unit tests: framing, state, and concurrency (no network)
+make tsan                             # the same tests under ThreadSanitizer (data-race detector)
 
-./bin/partyon-server &                # conformance tests over real TCP
-python3 tests/protocol_test.py        # optional: [host] [port]
+./bin/partyon-server &                # then, against the running server:
+python3 tests/protocol_test.py        # protocol conformance          (optional: [host] [port])
+python3 tests/concurrency_test.py     # multi-client races and failures (optional: [host] [port])
 ```
 
-`protocol_test.py` prints PASS or FAIL for each test ID (TC-F01 to F09, one per response code, and behavior checks). It works against any running server, including one on another machine.
+| Suite | What it checks |
+|---|---|
+| `test_framer`, `test_state` | Framing (TC-F01–F09), every command and response code, error reasons |
+| `test_concurrency` | 16 threads racing for one item, same-code creates, delete-vs-claim, per-connection notification order, connect/disconnect churn |
+| `test_store` | Save/load round trip, damaged or half-written files skipped, every change saved, a losing `CREATE_EVENT` never overwrites the winner |
+| `protocol_test.py` | Every response code and framing case over real TCP |
+| `concurrency_test.py` | Spec v2 conflict table rows 1–15 and Phase 1 TC-C01–C06 with simultaneous clients, plus failure isolation and slow-client protection |
+| `persistence_test.py` | Starts its own server: crash (kill) and restart, Ctrl+C with clients connected, damaged event file. Run with `python3 tests/persistence_test.py` |
+| `load_test.py` | Throughput, latency, and broadcast time for 10–200 clients, in one shared event and in separate events. Run with `python3 tests/load_test.py --clients 10,50,100` |
 
-**Automatic checks (GitHub Actions):** every push builds the project and runs the unit and conformance tests on **Linux and Windows** (`.github/workflows/build.yml`). See the repo's **Actions** tab, or the ✅/❌ next to a commit or PR. To start a run by hand, open Actions → *Build and test* → **Run workflow**.
+The Python scripts print PASS or FAIL for each test ID, and they work against any running server, including one on another machine.
+
+**Automatic checks (GitHub Actions):** every push builds the project and runs all of the above on **Linux and Windows**, plus a ThreadSanitizer job that checks the live server for data races (`.github/workflows/build.yml`). See the repo's **Actions** tab, or the ✅/❌ next to a commit or PR. To start a run by hand, open Actions → *Build and test* → **Run workflow**.
 
 Manual and integration testing follows the Phase 1 test plan (`docs/Project - Phase 1.pdf`, §9). Results are recorded in `tests/Phase2-TestReport.md`, and a sample server log is in `docs/server-log-sample.txt`. The framing tests cover one command per write, byte-by-byte delivery, several commands in one write, a split mid-token, a UTF-8 character split across reads, `\r\n` endings, a connection closed mid-line, and oversized lines.
 
@@ -338,7 +376,21 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 
 ---
 
-## 12. Troubleshooting
+## 12. Known limitations
+
+- **One thread pair per connection.** Each client uses two threads (reader and writer). This is simple and portable, but memory and scheduling cost grow with the number of clients. Our load test ran 200 simultaneous clients with no errors; thousands would need an event loop (`epoll`/`kqueue`/IOCP) instead.
+- **One busy event is the bottleneck.** Commands for a single event run one at a time, and every claim in that event notifies every connected guest. Throughput for one shared event falls from about 3,500 to about 640 commands/s between 10 and 200 clients, while separate events stay at 6,000–8,000 commands/s (see `load_test.py`).
+- **Failed disk writes are not reported to the user.** If saving an event fails (for example, the disk is full), the server logs an error and keeps the change in memory, but still replies with success. The protocol has no response code for "saved in memory only".
+- **No authentication.** Anyone who knows an event code can `JOIN` under any name, including the organizer's (spec: "a rejoin").
+- **Sessions are not saved.** After a server restart, every user must `JOIN` again. Events, guests, RSVPs, and items are restored.
+- **Plain TCP.** Traffic is not encrypted. Across the internet, use a VPN (we tested over the school VPN).
+- **Client prompt.** A notification can print after the next `PartyOn>` prompt (Phase 2 feedback; client fix in progress).
+
+## 13. Attribution
+
+PartyOn uses **no external libraries**: only the C++17 standard library, POSIX sockets / Winsock2 from the operating system, and the Python 3 standard library for the test scripts. The protocol, server, client, and tests were written by Group 4 for CIS 527. Some code and documentation were drafted with help from an AI assistant (Claude) and reviewed by the team.
+
+## 14. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -347,13 +399,13 @@ CREATE_EVENT Party1 Andrew 10/31/2026 07:00PM
 | Two machines: connection times out, nothing appears in the server log | Make sure **both** machines are connected to the VPN (the client must have a `141.215.x.x` address too), and add the macOS firewall rule from §6. |
 | `socketfilterfw`: "The file path you specified does not exist" | Run the command from the repository root, or give the full path to `bin/partyon-server`. |
 | `ifconfig \| grep utun` shows no address while on the VPN | Use the `awk` command in §6. It lists every interface with an IPv4 address. |
-| Client connects but nothing happens | Phase 2 serves one client at a time, so another client may still be connected. Quit that client first. |
+| Client connects but nothing happens | Check the server terminal for a `session N connected` line. If it's missing, the client reached a different machine or port. |
 | Every command returns `300` | Commands are case-sensitive and uppercase, with single spaces and no extra fields. |
 | `401 Not Identified` | `JOIN` or `CREATE_EVENT` the event on this connection first. Identities are lost when you reconnect. |
 
 ---
 
-## 13. Roadmap
+## 15. Roadmap
 
-- **Phase 2 (this submission):** single client, full command set, framing, validation, logging, clean disconnects.
-- **Phase 3:** multiple concurrent clients, per-event locks, notifications sent to every affected connection, race and resilience testing, and possibly saving events to a JSON file.
+- **Phase 2:** single client, full command set, framing, validation, logging, clean disconnects.
+- **Phase 3 (this submission):** multiple concurrent clients, per-event locks, notifications to every affected connection, error reasons on the wire, slow-client protection, race and resilience testing, and saving events to disk.
