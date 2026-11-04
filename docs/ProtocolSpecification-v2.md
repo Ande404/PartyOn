@@ -57,6 +57,22 @@ v2.0 replaces the two conformance levels of v1.0 (Level 1, single client; Level 
 | `404 Not Found` | A `JOIN` referenced an event that does not exist. |
 | `410 Conflict` | The action conflicts with the existing state (e.g. item already claimed, event code already taken, already identified in this event). |
 
+### Error response format
+
+Every error response (`300`, `401`, `402`, `404`, `410`) is a single line of the form `<code> <phrase>: <reason>`. For example:
+
+```
+300 Message Format Error: invalid date in field 3 (expected a real date as MM/DD/YYYY)
+300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+401 Not Identified: not identified in event Party1
+402 Not Authorized: only the organizer can delete this event
+404 Not Found: event Party1 does not exist
+410 Conflict: item already claimed by User1
+410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items
+```
+
+Clients must act only on the 3-digit code. The reason is for people to read and may change, so clients must not parse it or depend on its wording. The error lists under each command name errors by code and phrase only, and the server always adds a reason. The reasons shown in this document are examples.
+
 ### Error precedence
 
 When a command could fail for more than one reason, the server checks in this order and returns the first match.
@@ -201,15 +217,35 @@ Because there is no authentication, two connections may identify as the same use
 
 ### Slow Clients
 
-The server queues output per session. If a client stops reading and the number of lines queued for it exceeds a fixed limit, the server ends that session. This prevents one stalled client from delaying notifications to others. The limit is a count of queued lines, not a time delay, and is documented in the design document.
+The server queues output per session. If a client stops reading and the number of lines queued for it exceeds **1000 lines**, the server ends that session. Each client's socket send buffer is also capped at **64 KB**. This prevents one stalled client from delaying notifications to others. The limit is a count of queued lines, not a time delay.
 
 ### Persistence
 
-Each change is written to storage as part of applying the command, before the response is sent. Writes for one event are serialized with that event's other commands, and a failed or interrupted write must not leave a corrupt record for that event.
+Events are saved as **one file per event** in the folder given by the `--data-dir` option (default `data/`). Each change is saved as part of applying the command, before the response is sent. A save writes a temporary file and then renames it over the event's file, so a crash never leaves a half-written event. Writes for one event are serialized with that event's other commands. Connections and sessions are not saved.
 
 ### Logging
 
-The server logs one line for each of: session connect, session disconnect (with reason), each command applied (timestamp, session ID, event code, command name, result code), and each notification fan-out (recipient count). Startup and shutdown are also logged. Log lines from concurrent sessions must not be interleaved within a line.
+The server writes one log line per event, in the form `[<timestamp>] [<level>] <message>`. The timestamp is `YYYY-MM-DD HH:MM:SS`. The level is `INFO` for normal activity and `WARN` for a command that was rejected with an error. Log lines from concurrent sessions must not be interleaved within a line. Log wording is for operators and is not part of the wire protocol.
+
+The server logs:
+
+- **Startup:** how many events were loaded from the data folder, and the address, port, and per-client output limit it is listening with.
+- **Session connect:** the session ID, the client's address, and how many sessions are now connected.
+- **Each command applied:** `session <id> <COMMAND> <EventCode> -> <result>`, where the result is the response status line (with the reason for an error). Optional details follow: `(+N lines)` for extra response lines after the status line, `[new guest]` for a first-time `JOIN`, `[released N items]` for an `RSVP No` that released items, and `notified N connections` (with `(M notifications)` when more than one notification was sent per connection).
+- **Rejected input:** a line that could not be parsed is logged as `session <id> rejected "<line>" -> <error>`.
+- **`QUIT`:** logged with `no response`.
+- **Session disconnect:** the reason (for example, the client closed the connection or sent `QUIT`), how many events the session was removed from, and how many sessions are still connected.
+- **Shutdown:** the start of shutdown (with how many sessions are being closed) and when the server has stopped.
+
+Example:
+
+```
+[2026-11-03 13:49:32] [INFO] session 2 CLAIM_ITEM GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:32] [WARN] session 3 CLAIM_ITEM GradParty -> 410 Conflict: item already claimed by Giovanna
+[2026-11-03 13:49:35] [WARN] session 3 rejected "RSVP GradParty Purple" -> 300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+[2026-11-03 13:49:36] [INFO] session 2 RSVP GradParty -> 200 OK [released 2 items]; notified 3 connections (7 notifications)
+[2026-11-03 13:49:39] [INFO] session 3 disconnected (client closed the connection); removed from 1 event; 2 session(s) still connected
+```
 
 ### Graceful Shutdown
 
@@ -221,26 +257,30 @@ In each row, A is the command the server applies first and B is applied second. 
 
 | # | Scenario | A's result | B's result |
 | --- | --- | --- | --- |
-| 1 | Both `CLAIM_ITEM` the same item | `200 OK`, then `ITEM_CLAIMED` | `410 Conflict`, then still receives A's `ITEM_CLAIMED` |
+| 1 | Both `CLAIM_ITEM` the same item | `200 OK`, then `ITEM_CLAIMED` | receives A's `ITEM_CLAIMED`, then its own `410 Conflict: item already claimed by User1` |
 | 2 | `CLAIM_ITEM` for different items in one event | `200 OK` | `200 OK` (both applied, in lock order) |
 | 3 | `CLAIM_ITEM` in two different events | `200 OK` | `200 OK` (concurrent, independent) |
-| 4 | Both `CREATE_EVENT` with the same code | `201 Created Event` | `410 Conflict` |
+| 4 | Both `CREATE_EVENT` with the same code | `201 Created Event` | `410 Conflict: event code Party1 is already in use` |
 | 5 | A `RELEASE_ITEM` and B `CLAIM_ITEM` of the same item (A is the claimer) | `200 OK`, then `ITEM_RELEASED` | `200 OK`, then `ITEM_CLAIMED` |
-| 5b | Same as 5, but B's claim is applied first | B's `CLAIM_ITEM`: `410 Conflict` | A's `RELEASE_ITEM`: `200 OK` |
-| 6 | Non-claimer `RELEASE_ITEM` of a claimed item | n/a | `410 Conflict` |
-| 7 | `DELETE_EVENT` and a guest's `CLAIM_ITEM` or `RSVP`, delete applied first | `202 Deleted Event` | `401 Not Identified` |
+| 5b | Same as 5, but B's claim is applied first | B's `CLAIM_ITEM`: `410 Conflict: item already claimed by User1` | A's `RELEASE_ITEM`: `200 OK` |
+| 6 | Non-claimer `RELEASE_ITEM` of a claimed item | n/a | `410 Conflict: Chips is claimed by another user` |
+| 7 | `DELETE_EVENT` and a guest's `CLAIM_ITEM` or `RSVP`, delete applied first | `202 Deleted Event` | `401 Not Identified: not identified in event Party1` |
 | 7b | Same as 7, but the guest's command is applied first | guest: `200 OK`, then the notification | organizer: `202 Deleted Event`; guest then receives `EVENT_DELETED` |
-| 8 | Two `DELETE_EVENT` for the same event (e.g. two organizer connections) | `202 Deleted Event` | `401 Not Identified` |
-| 9 | `DELETE_EVENT`, then `CREATE_EVENT` with the same code, then an old guest sends `CLAIM_ITEM` | n/a | old guest: `401 Not Identified` until it sends `JOIN` |
+| 8 | Two `DELETE_EVENT` for the same event (e.g. two organizer connections) | `202 Deleted Event` | `401 Not Identified: not identified in event Party1` |
+| 9 | `DELETE_EVENT`, then `CREATE_EVENT` with the same code, then an old guest sends `CLAIM_ITEM` | n/a | old guest: `401 Not Identified: not identified in event Party1` until it sends `JOIN` |
 | 10 | `UPDATE_EVENT` and a new guest's `JOIN`, update applied first | `200 OK` | `200 OK`, confirmation shows the new date and time, no `EVENT_UPDATED` for this join |
 | 10b | Same as 10, but `JOIN` is applied first | joiner: `200 OK`, confirmation shows the old date and time | organizer: `200 OK`; joiner receives `EVENT_UPDATED` |
 | 11 | Two connections `JOIN` the same event as the same username | `200 OK` | `200 OK` (rejoin, each connection is independent) |
-| 12 | One connection sends `JOIN` twice for the same event | `200 OK` | `410 Conflict` |
+| 12 | One connection sends `JOIN` twice for the same event | `200 OK` | `410 Conflict: already identified in event Party1` |
 | 13 | Client disconnects after command applied, before reading the response | change stays applied | other clients still receive the notification |
 | 14 | Client stops reading until its output queue overflows | n/a | session ended, other clients unaffected |
 | 15 | `RSVP` by two guests at once | `200 OK`, organizer notified | `200 OK`, organizer notified (two separate notifications, in applied order) |
+| 16 | A guest's `RSVP No` and that same guest's `CLAIM_ITEM`, `RSVP No` applied first | `200 OK`, the guest's claimed items are released | `410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items` |
+| 16b | Same as 16, but the `CLAIM_ITEM` is applied first | claim: `200 OK` | the later `RSVP No`: `200 OK`, and the new claim is released with the rest |
 
 ## Commands
+
+Every error listed under a command's **Errors** is sent in the format described under Error response format: `<code> <phrase>: <reason>`.
 
 ### `JOIN`
 
@@ -356,6 +396,16 @@ RSVP <EventCode> <Status>
 
 **Server Behavior (success):** The server updates the status and returns a `200 OK` message, and sends a notification to the organizer in the form `210 <EventCode> RSVP_UPDATED <RSVPUser> status is now <Status>`.
 
+**Effect of `No`:**
+
+- When a user RSVPs `No`, the server releases every item that user currently claims in the event. Released items stay on the item list as unclaimed. The status change and the releases are applied together as one step.
+- For each released item, the server sends `210 <EventCode> ITEM_RELEASED <ItemName> is available to bring again` to all connections identified in the event, after the response to the `RSVP`.
+- While a user's status is `No`, that user's `CLAIM_ITEM` returns `410 Conflict`.
+- Changing the status to `Yes` or `Maybe` allows claims again. Items released by RSVPing `No` are not restored.
+- The status is saved with the guest, so a rejoin keeps it.
+- `RELEASE_ITEM`, `UPDATE_EVENT`, and `DELETE_EVENT` are not affected by the user's RSVP status.
+- This applies to every guest, including the organizer.
+
 **Example (guest client):**
 
 ```
@@ -422,7 +472,7 @@ RELEASE_ITEM <EventCode> <ItemName>
 - If the item is on the list as unclaimed (it was previously released), it is claimed by the requesting user.
 - If the item is on the list and already claimed (`claimedBy` is non-null), by anyone including the requester, the server returns `410 Conflict`.
 
-A claim is only rejected when the item is currently claimed, so a released item can always be claimed again.
+A claim is rejected when the item is currently claimed, or when the requesting user's RSVP status is `No`. A released item can otherwise always be claimed again.
 
 **`RELEASE_ITEM` behavior:** The item becomes unclaimed but stays on the list. If the item does not exist, is already unclaimed, or is claimed by someone else, the server returns `410 Conflict`.
 
