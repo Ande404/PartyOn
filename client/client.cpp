@@ -23,6 +23,16 @@
 
 using namespace std;
 mutex outputMutex;
+bool promptVisible = false;
+
+void showPrompt() {
+    lock_guard<mutex> lock(outputMutex);
+
+    if (!promptVisible) {
+        cout << "PartyOn> " << flush;
+        promptVisible = true;
+    }
+}
 
 enum class ResponseShape {
     SingleLine,
@@ -160,10 +170,14 @@ void displayServerLine(
     if (isNotification) {
         cout << endl;
         cout << "[Notification] "
-         << line << endl;
+            << line << endl;
+
+        // The notification moves the prompt to a new line.
+        promptVisible = false;
 
         if (!isWaitingForResponse()) {
             cout << "PartyOn> " << flush;
+            promptVisible = true;
         }
     }
     else {
@@ -434,12 +448,16 @@ int main() {
     );
 
     while (running) {
-        cout << "PartyOn> " << flush;
+        showPrompt();
 
         if (!getline(cin, command)) {
             cout << endl;
             cout << "Input closed. Exiting PartyOn." << endl;
             break;
+        }
+        {
+            lock_guard<mutex> lock(outputMutex);
+            promptVisible = false;
         }
 
         if (!running) {
