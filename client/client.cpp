@@ -160,7 +160,11 @@ void displayServerLine(
     if (isNotification) {
         cout << endl;
         cout << "[Notification] "
-             << line << endl;
+         << line << endl;
+
+        if (!isWaitingForResponse()) {
+            cout << "PartyOn> " << flush;
+        }
     }
     else {
         cout << endl;
