@@ -1,0 +1,47 @@
+# PartyOn Phase 3 sample server log (2026-11-03)
+# Three real partyon-client processes on one machine: Andrew (session 1, organizer),
+# Giovanna (session 2), and LaNaysha (session 3). In order:
+#   - Giovanna and LaNaysha send CLAIM_ITEM Cake at the same moment: one 200, one 410
+#   - LaNaysha sends a malformed RSVP and gets 300 with the reason
+#   - Giovanna cancels (RSVP No): her Cake and Punch are released and everyone is notified
+#   - Andrew claims the released Punch
+#   - LaNaysha's client is killed without QUIT; the others keep working
+#   - Giovanna (still RSVP No) tries to claim Balloons and is refused; she changes to
+#     RSVP Maybe ("I'll drop them off") and the claim succeeds
+#   - Giovanna and Andrew QUIT; the server is stopped with Ctrl+C and restarted,
+#     and the saved party is loaded back ("Loaded 1 event")
+
+[2026-11-03 13:49:27] [INFO] Loaded 0 events from data
+[2026-11-03 13:49:27] [INFO] PartyOn server listening on 0.0.0.0:5527 (multiple clients, 1000-line output limit per client)
+[2026-11-03 13:49:28] [INFO] session 1 connected from 127.0.0.1:55826; 1 session(s) connected
+[2026-11-03 13:49:29] [INFO] session 2 connected from 127.0.0.1:55827; 2 session(s) connected
+[2026-11-03 13:49:29] [INFO] session 3 connected from 127.0.0.1:55828; 3 session(s) connected
+[2026-11-03 13:49:30] [INFO] session 1 CREATE_EVENT GradParty -> 201 Created Event (+1 line)
+[2026-11-03 13:49:31] [INFO] session 2 JOIN GradParty -> 200 OK (+1 line) [new guest]
+[2026-11-03 13:49:31] [INFO] session 3 JOIN GradParty -> 200 OK (+1 line) [new guest]
+[2026-11-03 13:49:32] [INFO] session 2 CLAIM_ITEM GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:32] [WARN] session 3 CLAIM_ITEM GradParty -> 410 Conflict: item already claimed by Giovanna
+[2026-11-03 13:49:33] [INFO] session 3 CLAIM_ITEM GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:34] [INFO] session 2 CLAIM_ITEM GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:34] [INFO] session 2 RSVP GradParty -> 200 OK; notified 1 connection
+[2026-11-03 13:49:35] [WARN] session 3 rejected "RSVP GradParty Purple" -> 300 Message Format Error: invalid RSVP status in field 2 (expected Yes, No, or Maybe)
+[2026-11-03 13:49:36] [INFO] session 1 UPDATE_EVENT GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:36] [INFO] session 2 RSVP GradParty -> 200 OK [released 2 items]; notified 3 connections (7 notifications)
+[2026-11-03 13:49:37] [INFO] session 1 CLAIM_ITEM GradParty -> 200 OK; notified 3 connections
+[2026-11-03 13:49:38] [INFO] session 1 WHO GradParty -> 200 OK (+4 lines)
+[2026-11-03 13:49:39] [INFO] session 1 ITEMLIST GradParty -> 200 OK (+4 lines)
+[2026-11-03 13:49:39] [INFO] session 3 disconnected (client closed the connection); removed from 1 event; 2 session(s) still connected
+[2026-11-03 13:49:40] [WARN] session 2 CLAIM_ITEM GradParty -> 410 Conflict: you RSVP'd No; change your RSVP to Yes or Maybe to claim items
+[2026-11-03 13:49:41] [INFO] session 2 RSVP GradParty -> 200 OK; notified 1 connection
+[2026-11-03 13:49:41] [INFO] session 2 CLAIM_ITEM GradParty -> 200 OK; notified 2 connections
+[2026-11-03 13:49:42] [INFO] session 1 ITEMLIST GradParty -> 200 OK (+5 lines)
+[2026-11-03 13:49:43] [INFO] session 2 QUIT -> no response [client sent QUIT]
+[2026-11-03 13:49:43] [INFO] session 2 disconnected (client sent QUIT); removed from 1 event; 1 session(s) still connected
+[2026-11-03 13:49:43] [INFO] session 1 QUIT -> no response [client sent QUIT]
+[2026-11-03 13:49:43] [INFO] session 1 disconnected (client sent QUIT); removed from 1 event; 0 session(s) still connected
+[2026-11-03 13:49:45] [INFO] Shutting down: no new connections; closing 0 session(s)
+[2026-11-03 13:49:45] [INFO] Server stopped
+[2026-11-03 13:49:45] [INFO] Loaded 1 event from data
+[2026-11-03 13:49:45] [INFO] PartyOn server listening on 0.0.0.0:5527 (multiple clients, 1000-line output limit per client)
+[2026-11-03 13:49:46] [INFO] Shutting down: no new connections; closing 0 session(s)
+[2026-11-03 13:49:46] [INFO] Server stopped
