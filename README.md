@@ -1,13 +1,13 @@
 # PartyOn
 
-**CIS 527  Computer Networks · Socket Programming Project · Fall 2026**
-University of Michigan–Dearborn · Group 4
+**Computer Networks · Socket Programming Project · Fall 2026**
 
 | Member | Area |
 |---|---|
+| Andrew Luwaga | Server and application state |
 | Giovanna Ponce Cisternas | Client and user experience |
 | LaNaysha Simms | Protocol, requirements, and testing |
-| Andrew Luwaga | Server and application state |
+
 
 ---
 
@@ -474,13 +474,3 @@ PartyOn uses **no external libraries**: only the C++17 standard library, POSIX s
 | `401 Not Identified` | `JOIN` or `CREATE_EVENT` the event on this connection first. Identities are lost when you reconnect. |
 
 ---
-
-## 15. Future work
-
-Ideas from the original proposal and from our testing that are outside this project's scope:
-
-- **Important items:** let the organizer mark items as essential (e.g. the cake) and alert them when one is released (requirements FR-14, FR-15).
-- **Backup options and event history** (FR-16, FR-17).
-- **Accounts and encryption:** authentication so names can't be impersonated, and TLS for traffic over the internet.
-- **Scaling further:** an event loop (`epoll`/`kqueue`/IOCP) instead of two threads per client, for thousands of connections.
-- **Reporting failed saves** to the user instead of only logging them.
